@@ -49,7 +49,7 @@ class Settings:
     engine_depth: int = field(default_factory=lambda: _env("ENGINE_DEPTH", 14, int))
 
     max_pgn_chars: int = field(default_factory=lambda: _env("MAX_PGN_CHARS", 30000, int))
-    max_plies: int = field(default_factory=lambda: _env("MAX_PLIES", 200, int))
+    max_plies: int = field(default_factory=lambda: _env("MAX_PLIES", 1000, int))
 
     max_concurrent_games: int = field(default_factory=lambda: _env("MAX_CONCURRENT_GAMES", 2, int))
     queue_wait_s: float = field(default_factory=lambda: _env("QUEUE_WAIT_S", 30.0, float))
