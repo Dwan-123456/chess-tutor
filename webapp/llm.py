@@ -84,6 +84,8 @@ class DeepSeekClient:
             "temperature": 0.2, "max_tokens": max_tokens, "enable_thinking": False,
         }
         for attempt in range(3):
+            from datetime import datetime, timezone
+            requested_at = datetime.now(timezone.utc)
             try:
                 response = await self._client.post(self.url, json=payload)
             except httpx.HTTPError:
@@ -104,6 +106,8 @@ class DeepSeekClient:
                 raise LLMError("DeepSeek returned an empty comment")
             import datetime
             usage = dict(data.get("usage") or {})
+            from .billing import estimate
+            usage["billing"] = estimate(usage, requested_at)
             usage["generation"] = {
                 "provider": "deepseek", "model": data.get("model") or model,
                 "requested_model": model, "request_id": data.get("id"),

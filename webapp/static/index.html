@@ -283,6 +283,7 @@ kbd{font:500 11px var(--mono);border:1px solid var(--line2);border-bottom-width:
     Annotator <small>Stockfish + AI</small>
   </div>
   <div class="spacer"></div>
+  <span class="pill" id="totalCost">0.0000 CNY</span>
   <span class="pill" id="health"><i></i><span>Checking server…</span></span>
   <button class="btn ghost" id="newGame" hidden>New game</button>
 </header>
@@ -1008,6 +1009,8 @@ function renderGameHead() {
   renderProgress();
 }
 function renderProgress() {
+  const totalCny = Object.values(S.cm).reduce((sum, comment) => sum + (comment.billing || []).reduce((n, b) => n + b.cost_cny, 0), 0);
+  $('#totalCost').textContent = `${totalCny.toFixed(4)} CNY`;
   if (!S.engineOn || !$('#pgE')) return;
   const n = N(), e = Object.keys(S.ev).length, c = Object.keys(S.cm).length;
   $('#pgE').style.width = (n ? e / n * 100 : 0) + '%'; $('#pgEn').textContent = `${e}/${n}`;
@@ -1015,7 +1018,7 @@ function renderProgress() {
   const st = $('#pgS');
   st.classList.toggle('err', !!S.streamErr);
   if (S.streamErr) st.textContent = S.streamErr;
-  else if (S.done) st.textContent = S.done.cached ? 'Loaded from cache.' : `Done${S.done.cost_usd ? ` · cost $${S.done.cost_usd.toFixed(4)}` : ''}.`;
+  else if (S.done) st.textContent = S.done.cached ? 'Loaded from cache.' : 'Done.';
   else if (S.streaming) st.textContent = e < n ? 'Stockfish is analysing; comments arrive as each move is checked.' : 'Writing the remaining comments…';
   else st.textContent = '';
 }

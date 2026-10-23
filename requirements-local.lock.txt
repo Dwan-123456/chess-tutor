@@ -4,6 +4,7 @@ anyio==4.15.1
 certifi==2026.10.23
 charset-normalizer==3.5.2
 chess==1.11.2
+chinese_calendar==1.11.0
 click==8.5.0
 fastapi==0.161.1
 h11==0.16.0

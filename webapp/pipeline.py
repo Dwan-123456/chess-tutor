@@ -108,16 +108,21 @@ class GamePipeline:
             factcheck = False
         cost = 0.0
         generation = None
+        billing = []
         try:
             async with self.llm_sem:
                 text, usage = await self.llm.chat(self.s.model, sys_p, user_p)
                 generation = usage.get("generation")
+                if usage.get("billing"):
+                    billing.append(usage["billing"])
                 cost += self.s.cost(self.s.model, usage)
                 if factcheck:
                     fsys, fuser = app_prompts.build_factcheck_prompt(user_p, text)
                     try:
                         checked, usage2 = await self.llm.chat(self.s.factcheck_model, fsys, fuser)
                         cost += self.s.cost(self.s.factcheck_model, usage2)
+                        if usage2.get("billing"):
+                            billing.append(usage2["billing"])
                         if (checked and checked.strip() != "NO_CHANGES" and len(checked) >= 0.6 * len(text)
                                 and checked.rstrip().endswith((".", "!", "?", '"', ")"))):
                             text = checked
@@ -127,7 +132,7 @@ class GamePipeline:
             self.store.add_spend(cost)
             return {"type": "comment", "ply": ply, "error": f"Commentary unavailable ({e})."}
         self.store.add_spend(cost)
-        return {"type": "comment", "ply": ply, "text": text, "generation": generation, "_cost": cost}
+        return {"type": "comment", "ply": ply, "text": text, "generation": generation, "billing": billing, "_cost": cost}
 
     # ---------------------------------------------------------------- orchestration
     async def run(self, game: chess.pgn.Game, factcheck: bool, cancel: threading.Event):
@@ -199,7 +204,15 @@ class GamePipeline:
                         return
             if not failed and self.s.commentator_backend != "deepseek":
                 self.store.put_cached(key, events)
-            yield {"type": "done", "cost_usd": round(total_cost, 5), "cached": False}
+            records = [b for event in events for b in event.get("billing", [])]
+            summary = None
+            if self.s.commentator_backend == "deepseek":
+                summary = {"currency": "CNY", "cost_cny": sum(b['cost_cny'] for b in records),
+                           "calls": len(records), "peak_calls": sum(b['period'] == 'peak' for b in records),
+                           "cache_reported": all(b['cache_reported'] for b in records)}
+                for name in ('prompt_tokens', 'cache_hit_tokens', 'cache_miss_tokens', 'completion_tokens'):
+                    summary[name] = sum(b[name] for b in records)
+            yield {"type": "done", "cost_usd": round(total_cost, 5), "billing": summary, "cached": False}
         finally:
             cancel.set()
             for t in tasks:
