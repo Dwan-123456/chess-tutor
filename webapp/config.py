@@ -46,7 +46,7 @@ class Settings:
     factcheck_model: str = field(default_factory=lambda: _env("FACTCHECK_MODEL", "openai/gpt-oss-120b"))
 
     stockfish_path: str = field(default_factory=lambda: _env("STOCKFISH_PATH", "stockfish"))
-    engine_depth: int = field(default_factory=lambda: _env("ENGINE_DEPTH", 14, int))
+    engine_depth: int = field(default_factory=lambda: _env("ENGINE_DEPTH", 30, int))
 
     max_pgn_chars: int = field(default_factory=lambda: _env("MAX_PGN_CHARS", 30000, int))
     max_plies: int = field(default_factory=lambda: _env("MAX_PLIES", 1000, int))
