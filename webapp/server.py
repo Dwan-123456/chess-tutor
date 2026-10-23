@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 
 from .config import Settings
 from .llm import DeepSeekClient, GroqClient, LlamaServerClient, MockClient, StudentClient
-from .pipeline import GamePipeline, PGNError, parse_single_game
+from .pipeline import GamePipeline, PGNError, parse_single_game, cache_key
 from .store import Store
 
 STATIC = Path(__file__).parent / "static"
@@ -58,6 +58,7 @@ class RateLimiter:
 async def lifespan(app: FastAPI):
     s = Settings()
     app.state.settings = s
+    app.state.analysis_locks = {}
     app.state.store = Store(s.db_path)
     if s.commentator_backend == "disabled":
         app.state.llm = None
@@ -116,8 +117,6 @@ async def annotate(req: AnnotateRequest, request: Request):
         game = parse_single_game(req.pgn, s)
     except PGNError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    if st.store.spent_today() >= s.daily_budget_usd:
-        raise HTTPException(status_code=503, detail="The daily commentary budget has been used up. Please try again tomorrow.")
     if not st.limiter.allow(_client_ip(request)):
         raise HTTPException(status_code=429, detail="Too many games from your address this hour. Please wait a bit.")
     try:
@@ -133,12 +132,15 @@ async def annotate(req: AnnotateRequest, request: Request):
 
     async def stream():
         events = pipeline.run(game, factcheck, cancel)
+        key = cache_key(game, s, factcheck)
+        lock = st.analysis_locks.setdefault(key, asyncio.Lock())
         try:
-            async for ev in events:
-                if await request.is_disconnected():
-                    cancel.set()
-                    break
-                yield json.dumps(ev) + "\n"
+            async with lock:
+                async for ev in events:
+                    if await request.is_disconnected():
+                        cancel.set()
+                        break
+                    yield json.dumps(ev) + "\n"
         except Exception as e:  # noqa: BLE001
             yield json.dumps({"type": "error", "message": f"Unexpected server error: {e}"}) + "\n"
         finally:

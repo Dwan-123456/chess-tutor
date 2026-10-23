@@ -4,6 +4,7 @@
 .env.*
 !.env.example
 runtime/
+history/
 .vscode-portable/
 *.key
 # Groq API key stored in C:\Users\shank

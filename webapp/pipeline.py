@@ -26,6 +26,7 @@ import chess.pgn
 from chess_annotator import app_prompts, features, positional, prompts
 
 from .config import PIPELINE_VERSION, Settings
+from .history import History, rules_fingerprint, engine_fingerprint
 
 MOVE_FIELDS = ("ply", "move_number", "side", "san", "uci", "fen_before", "fen_after", "phase",
                "eval_before_cp", "eval_after_cp", "mate_before", "mate_after", "cp_loss",
@@ -63,14 +64,22 @@ def parse_single_game(pgn_text: str, settings: Settings) -> chess.pgn.Game:
     return game
 
 
-def cache_key(game: chess.pgn.Game, settings: Settings, factcheck: bool) -> str:
-    blob = json.dumps({
+def analysis_signature(game: chess.pgn.Game, settings: Settings, factcheck: bool) -> dict:
+    return {
         "fen": game.board().fen(),
         "moves": [m.uci() for m in game.mainline_moves()],
         "v": PIPELINE_VERSION, "model": settings.model, "effort": settings.reasoning_effort,
         "factcheck": factcheck, "fc_model": settings.factcheck_model if factcheck else None,
         "depth": settings.engine_depth,
-    }, sort_keys=True)
+        "backend": settings.commentator_backend,
+        "rules": rules_fingerprint(), "engine": engine_fingerprint(settings.stockfish_path),
+        "endpoint": hashlib.sha256(settings.deepseek_base_url.encode()).hexdigest(),
+        "max_plies": settings.max_plies,
+    }
+
+
+def cache_key(game: chess.pgn.Game, settings: Settings, factcheck: bool) -> str:
+    blob = json.dumps(analysis_signature(game, settings, factcheck), sort_keys=True)
     return hashlib.sha256(blob.encode()).hexdigest()
 
 
@@ -139,12 +148,18 @@ class GamePipeline:
         headers = dict(game.headers)
         plies = sum(1 for _ in game.mainline_moves())
         key = cache_key(game, self.s, factcheck)
+        signature = analysis_signature(game, self.s, factcheck)
 
-        # DeepSeek requests must be fresh: legacy cache records have no provenance.
-        cached = None if self.s.commentator_backend == "deepseek" else self.store.get_cached(key)
+        history_store = History()
+        saved = history_store.read(key, plies) if self.s.commentator_backend == 'deepseek' else None
+        cached = saved['events'] if saved else (None if self.s.commentator_backend == 'deepseek' else self.store.get_cached(key))
         if cached is not None:
             yield {"type": "meta", "headers": headers, "plies": plies, "cached": True}
             for ev in cached:
+                # Preserve original provenance and text, but a replay incurs no new token cost.
+                ev = dict(ev)
+                if ev.get('type') == 'comment':
+                    ev['billing'] = []
                 yield ev
             yield {"type": "done", "cost_usd": 0.0, "cached": True}
             return
@@ -204,6 +219,8 @@ class GamePipeline:
                         return
             if not failed and self.s.commentator_backend != "deepseek":
                 self.store.put_cached(key, events)
+            if not failed and self.s.commentator_backend == 'deepseek' and signature == analysis_signature(game, self.s, factcheck):
+                history_store.write(key, game, events, signature)
             records = [b for event in events for b in event.get("billing", [])]
             summary = None
             if self.s.commentator_backend == "deepseek":

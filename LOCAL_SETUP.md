@@ -25,3 +25,8 @@ DeepSeek 已在 `webapp/llm.py` 接入阿里云兼容接口。
 原始项目：https://github.com/shashank-v-98/chess-annotator（保留上游 MIT 许可证）。
 Stockfish：https://github.com/official-stockfish/Stockfish/releases/tag/sf_19（GPL）。
 本机二进制、虚拟环境和日志不进入 Git；GitHub 新建仓库及推送待登录后处理。
+
+## 本地历史记录
+完整成功的 DeepSeek 分析自动保存为 `history/<分析标识>.json`。记录含棋谱主线、原始模型输出、规则指纹、请求编号和原始用量；不保存 API 密钥。
+相同起始局面与主线、规则和提示词文件、引擎版本、深度、模型及事实检查配置一致时复用。规则或提示词代码变化自动失效；旧记录保留。未完成、出错或损坏的记录不会复用。
+复用时本次费用为零，界面不增加历史记录标签。此前未落盘的分析需要首次重新生成。
