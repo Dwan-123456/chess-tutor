@@ -97,6 +97,8 @@ class GamePipeline:
     # ---------------------------------------------------------------- commentary
     async def _comment(self, m: dict, history: list, insights: dict, factcheck: bool) -> dict:
         ply = m["ply"]
+        if self.s.commentator_backend == "disabled":
+            return {"type": "comment", "ply": ply, "error": "尚未接入解说模型；当前仅提供 Stockfish 分析。"}
         if self.store.spent_today() >= self.s.daily_budget_usd:
             return {"type": "comment", "ply": ply, "error": "Daily commentary budget reached; try again tomorrow."}
         sys_p, user_p = app_prompts.build_app_move_prompt(m, history, insights)

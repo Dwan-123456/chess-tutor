@@ -25,6 +25,8 @@ DEFAULT_PRICES = {
 
 @dataclass
 class Settings:
+    deepseek_api_key: str = field(default_factory=lambda: _env("DEEPSEEK_API_KEY", ""))
+    deepseek_base_url: str = field(default_factory=lambda: _env("DEEPSEEK_BASE_URL", ""))
     groq_api_key: str = field(default_factory=lambda: _env("GROQ_API_KEY", ""))
     commentator_backend: str = field(default_factory=lambda: _env("COMMENTATOR_BACKEND", "groq"))  # groq | student | mock
     # Distilled student (COMMENTATOR_BACKEND=student): base model + LoRA adapter, run locally.

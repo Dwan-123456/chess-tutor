@@ -280,7 +280,7 @@ kbd{font:500 11px var(--mono);border:1px solid var(--line2);border-bottom-width:
 <header class="topbar">
   <div class="brand">
     <svg viewBox="0 0 100 100" class="w"><use href="#p-N"/></svg>
-    Annotator <small>Chess SLM</small>
+    Annotator <small>Stockfish + AI</small>
   </div>
   <div class="spacer"></div>
   <span class="pill" id="health"><i></i><span>Checking server…</span></span>
@@ -669,9 +669,18 @@ async function checkHealth() {
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const h = await r.json();
     S.backend = h;
+    $('#optFact').checked = h.factcheck_default ?? true;
     pill.className = 'pill ok';
     const model = h.backend === 'mock' ? 'mock backend' : h.backend?.startsWith('student') ? 'student model v3' + (h.backend === 'student_gguf' ? ' · llama.cpp' : '') : (h.model || '').replace(/^.*\//, '');
     pill.lastElementChild.textContent = 'Live · ' + model;
+    if (h.backend === 'deepseek') {
+      $('#optNote').textContent = 'Stockfish 19 本地分析 · DeepSeek 中文解说。启用事实检查会增加一次模型调用；费用显示为估算，以阿里云账单为准。';
+    }
+    if (h.backend === 'disabled') {
+      pill.lastElementChild.textContent = 'Stockfish 19 · 解说未接入';
+      $('#optFact').checked = false; $('#optFact').closest('label').hidden = true;
+      $('#optNote').textContent = '当前仅运行本地 Stockfish 19 分析。尚未配置 DeepSeek，不会调用模型 API。';
+    }
     if (h.backend?.startsWith('student')) {
       $('#optFact').checked = false; $('#optFact').closest('label').hidden = true;
       $('#optNote').textContent = h.backend === 'student_gguf' ? 'Commentary by the distilled student (Qwen2.5-1.5B + LoRA, quantized), running locally with llama.cpp.' : 'Commentary by the distilled student (Qwen2.5-1.5B + LoRA), running locally. On CPU expect roughly 10–30 s per move.';

@@ -1,5 +1,10 @@
 # Secrets -- never commit these
 .env
+*apiKey*.csv
+.env.*
+!.env.example
+runtime/
+.vscode-portable/
 *.key
 # Groq API key stored in C:\Users\shank
 # Python

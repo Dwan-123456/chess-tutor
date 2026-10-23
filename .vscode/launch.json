@@ -1,0 +1,11 @@
+{
+  "version": "0.2.0",
+  "configurations": [{
+    "name": "Chess Annotator (Stockfish 19)",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}/launch.py",
+    "console": "integratedTerminal",
+    "cwd": "${workspaceFolder}"
+  }]
+}

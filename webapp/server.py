@@ -24,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from .config import Settings
-from .llm import GroqClient, LlamaServerClient, MockClient, StudentClient
+from .llm import DeepSeekClient, GroqClient, LlamaServerClient, MockClient, StudentClient
 from .pipeline import GamePipeline, PGNError, parse_single_game
 from .store import Store
 
@@ -59,7 +59,13 @@ async def lifespan(app: FastAPI):
     s = Settings()
     app.state.settings = s
     app.state.store = Store(s.db_path)
-    if s.commentator_backend == "mock":
+    if s.commentator_backend == "disabled":
+        app.state.llm = None
+        s.model = "none"
+        s.factcheck_default = False
+    elif s.commentator_backend == "deepseek":
+        app.state.llm = DeepSeekClient(s.deepseek_api_key, s.deepseek_base_url)
+    elif s.commentator_backend == "mock":
         app.state.llm = MockClient()
     elif s.commentator_backend == "student":
         print(f"Loading student: {s.student_base_model} + {s.student_adapter} (first run downloads the base model)...")
@@ -79,7 +85,8 @@ async def lifespan(app: FastAPI):
     app.state.game_sem = asyncio.Semaphore(s.max_concurrent_games)
     app.state.limiter = RateLimiter(s.games_per_ip_per_hour)
     yield
-    await app.state.llm.aclose()
+    if app.state.llm is not None:
+        await app.state.llm.aclose()
 
 
 app = FastAPI(title="Chess commentary", lifespan=lifespan)
@@ -96,7 +103,8 @@ def _client_ip(request: Request) -> str:
 @app.get("/api/health")
 async def health(request: Request):
     s, store = request.app.state.settings, request.app.state.store
-    return {"ok": True, "model": s.model, "backend": s.commentator_backend,
+    return {"ok": True, "application": "chess-annotator-desktop", "model": s.model, "backend": s.commentator_backend,
+            "factcheck_default": s.factcheck_default,
             "spent_today_usd": round(store.spent_today(), 4), "daily_budget_usd": s.daily_budget_usd}
 
 

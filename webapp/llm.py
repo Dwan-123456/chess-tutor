@@ -63,6 +63,52 @@ class GroqClient:
         await self._client.aclose()
 
 
+class DeepSeekClient:
+    """Alibaba Cloud OpenAI-compatible endpoint; credentials stay on the server."""
+
+    reasoning_effort = "n/a"
+
+    def __init__(self, api_key: str, base_url: str):
+        if not api_key or not base_url.startswith("https://"):
+            raise LLMError("DeepSeek API configuration is missing or invalid")
+        self.url = base_url.rstrip("/") + "/chat/completions"
+        self._client = httpx.AsyncClient(timeout=90, headers={"Authorization": f"Bearer {api_key}"})
+
+    async def chat(self, model: str, system: str, user: str, max_tokens: int = 500) -> tuple:
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system + "\n请用简体中文简短讲解，保留 SAN 棋步记号。只依据提供的引擎事实，不编造战术或变化。若是事实检查任务，保留 NO_CHANGES 标记。"},
+                {"role": "user", "content": user},
+            ],
+            "temperature": 0.2, "max_tokens": max_tokens, "enable_thinking": False,
+        }
+        for attempt in range(3):
+            try:
+                response = await self._client.post(self.url, json=payload)
+            except httpx.HTTPError:
+                if attempt == 2:
+                    raise LLMError("DeepSeek network request failed") from None
+                await asyncio.sleep(attempt + 1)
+                continue
+            if response.status_code == 429 or response.status_code >= 500:
+                if attempt < 2:
+                    await asyncio.sleep(attempt + 1)
+                    continue
+            if response.status_code >= 400:
+                # Do not forward provider response bodies, which may contain sensitive data.
+                raise LLMError(f"DeepSeek HTTP {response.status_code}; check model access, balance and API configuration")
+            data = response.json()
+            text = (data["choices"][0]["message"].get("content") or "").strip()
+            if not text:
+                raise LLMError("DeepSeek returned an empty comment")
+            return text, data.get("usage") or {}
+        raise LLMError("DeepSeek request failed")
+
+    async def aclose(self):
+        await self._client.aclose()
+
+
 class MockClient:
     """No network, no cost -- for local testing of the pipeline and UI."""
 
