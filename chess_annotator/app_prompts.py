@@ -36,6 +36,9 @@ not a move that was played).
 pieces or squares that do not exist.
 
 How to write the annotation:
+- If is_checkmate is true, winner and result are authoritative: the game is over.
+  Praise the completed checkmate; never call it a missed mate or suggest a better move.
+  mate_in=0 at game end has no signed winner information; do not infer the winner from zero.
 - Write 2-4 sentences of natural prose, like a strong human annotator. No bullet points, no \
 headings, no restating the JSON.
 - Lead with the most important idea. Pick the one or two insights that best explain the move; \

@@ -73,6 +73,9 @@ class MoveFeatures:
     is_best_move: bool
     best_move_san: Optional[str]
     principal_variation_san: list = field(default_factory=list)
+    is_checkmate: bool = False
+    winner: Optional[str] = None
+    result: Optional[str] = None
     gives_up_mate: bool = False
     missed_mate: bool = False
     tags: list = field(default_factory=list)  # lightweight heuristic tags
@@ -415,6 +418,17 @@ def _analyze_parsed_game(game: "chess.pgn.Game", analyser: _PositionAnalyser, ma
         gives_up_mate = missed_mate
 
         quality_label, nag_symbol = _quality_label(cp_loss, missed_mate)
+        # Mate(0) loses its winner sign when serialized. The board is authoritative.
+        is_checkmate = board.is_checkmate()
+        outcome = board.outcome()
+        result = outcome.result() if outcome else None
+        winner = ("white" if outcome.winner else "black") if outcome and outcome.winner is not None else None
+        if is_checkmate:
+            cp_loss = 0
+            missed_mate = gives_up_mate = False
+            quality_label, nag_symbol = "best", ""
+            is_best_move = True
+            best_move_san = san
 
         tags = []
         if is_capture:
@@ -451,6 +465,9 @@ def _analyze_parsed_game(game: "chess.pgn.Game", analyser: _PositionAnalyser, ma
             best_move_san=best_move_san,
             principal_variation_san=pv_san,
             gives_up_mate=gives_up_mate,
+            is_checkmate=is_checkmate,
+            winner=winner,
+            result=result,
             missed_mate=missed_mate,
             tags=tags,
             captured_piece=captured_piece,

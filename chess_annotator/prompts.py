@@ -135,6 +135,8 @@ def _mover_state(cp, mate, mover: str) -> str:
 
 
 def _change_block(move: dict) -> dict:
+    if move.get("is_checkmate"):
+        return {"cp": None, "pawns": None, "meaning": f"{move['winner'].title()} delivered checkmate. The game is over; this is not a missed mate."}
     mover = "White" if move["side"] == "white" else "Black"
     sign = 1 if mover == "White" else -1
     cb, ca = move.get("eval_before_cp"), move.get("eval_after_cp")
@@ -181,6 +183,12 @@ def build_move_prompt(move: dict, history: list[dict] | None) -> tuple:
     slim = {k: move[k] for k in ("ply", "move_number", "side", "san", "phase")}
     slim["eval_before"] = _eval_block(move.get("eval_before_cp"), move.get("mate_before"))
     slim["eval_after"] = _eval_block(move.get("eval_after_cp"), move.get("mate_after"))
+    if move.get("is_checkmate"):
+        slim["eval_after"] = {"cp": None, "pawns": None, "mate_in": 0,
+                              "meaning": f"{move['winner'].title()} has delivered checkmate. Game over, result {move['result']}."}
+    slim["is_checkmate"] = move.get("is_checkmate", False)
+    slim["winner"] = move.get("winner")
+    slim["result"] = move.get("result")
     slim["eval_change_for_mover"] = _change_block(move)
     slim["material_after"] = _material_block(move["material_after"])
     for k in ("quality_label", "nag_symbol", "is_best_move", "best_move_san",

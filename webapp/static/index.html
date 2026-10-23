@@ -906,16 +906,18 @@ const winp = cp => 1 / (1 + Math.exp(-0.00368208 * cp));
 function evalAt(ply) {
   const e = S.ev[ply];
   if (ply === 0) { const n = S.ev[1]; return n ? { cp: n.eval_before_cp, mate: n.mate_before } : null; }
-  return e ? { cp: e.eval_after_cp, mate: e.mate_after } : null;
+  return e ? { cp: e.eval_after_cp, mate: e.mate_after, result: e.result, winner: e.winner } : null;
 }
 function fmtEval(v) {
   if (!v) return '–';
+  if (v.result) return v.result === '1/2-1/2' ? '和棋' : `${v.winner === 'white' ? '白方' : '黑方'}将杀 · ${v.result}`;
   if (v.mate != null) return (v.mate > 0 ? '+' : '−') + 'M' + Math.abs(v.mate);
   if (v.cp == null) return '–';
   return (v.cp >= 0 ? '+' : '−') + Math.abs(v.cp / 100).toFixed(1);
 }
 function evalFrac(v) {
   if (!v) return null;
+  if (v.result) return v.result === '1-0' ? 1 : v.result === '0-1' ? 0 : 0.5;
   if (v.mate != null) return v.mate > 0 ? 1 : v.mate < 0 ? 0 : 0.5;
   if (v.cp == null) return null;
   return winp(v.cp);
@@ -1026,6 +1028,7 @@ function renderProgress() {
 const QUAL = { best: 'Best', excellent: 'Excellent', good: 'Good', inaccuracy: 'Inaccuracy', mistake: 'Mistake', blunder: 'Blunder' };
 function glyphFor(ply) {
   const p = S.game.plies[ply - 1], e = S.ev[ply];
+  if (e?.is_checkmate) return { g: '', q: 'best' };
   if (e && ['inaccuracy', 'mistake', 'blunder'].includes(e.quality_label)) return { g: e.nag_symbol, q: e.quality_label };
   const pg = p.nags.map(n => NAG[n]).filter(x => x && /^[!?]+$/.test(x))[0];
   if (pg) return { g: pg, q: pg === '??' ? 'blunder' : pg === '?' ? 'mistake' : pg === '?!' ? 'inaccuracy' : pg === '!?' ? 'good' : 'excellent' };
@@ -1092,8 +1095,8 @@ function renderPanel() {
 
   el.innerHTML = `<div class="chead">
       <span class="mv"><small>${num}${white ? '.' : '…'}</small>${esc(p.san)}${gl.g ? `<span style="color:var(--qc)">${esc(gl.g)}</span>` : ''}${pgnNags.length ? ` <small>${esc(pgnNags.join(' '))}</small>` : ''}</span>
-      ${q ? `<span class="badge">${QUAL[q] || q}</span>` : ''}
-      ${e ? `<span class="ev">${fmtEval({ cp: e.eval_before_cp, mate: e.mate_before })} → <b>${fmtEval({ cp: e.eval_after_cp, mate: e.mate_after })}</b></span>` : ''}
+      ${q ? `<span class="badge">${e?.is_checkmate ? '将杀' : (QUAL[q] || q)}</span>` : ''}
+      ${e ? `<span class="ev">${fmtEval({ cp: e.eval_before_cp, mate: e.mate_before })} → <b>${fmtEval({ cp: e.eval_after_cp, mate: e.mate_after, result: e.result, winner: e.winner })}</b></span>` : ''}
     </div>${body}${facts}${anno}`;
 }
 

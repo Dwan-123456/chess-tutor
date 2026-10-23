@@ -74,4 +74,4 @@ class Settings:
 
 
 # Bump when prompts/insights change so cached commentary from older versions isn't reused.
-PIPELINE_VERSION = "app-1"
+PIPELINE_VERSION = "app-2-terminal-material"

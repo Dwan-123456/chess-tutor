@@ -30,7 +30,7 @@ from .config import PIPELINE_VERSION, Settings
 MOVE_FIELDS = ("ply", "move_number", "side", "san", "uci", "fen_before", "fen_after", "phase",
                "eval_before_cp", "eval_after_cp", "mate_before", "mate_after", "cp_loss",
                "quality_label", "nag_symbol", "is_best_move", "best_move_san",
-               "principal_variation_san", "captured_piece", "material_after", "tags")
+               "principal_variation_san", "captured_piece", "material_after", "tags", "is_checkmate", "winner", "result")
 
 
 class PGNError(ValueError):

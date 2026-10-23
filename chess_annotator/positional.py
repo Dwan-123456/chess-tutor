@@ -668,8 +668,15 @@ def analyze_move(before: chess.Board, move: chess.Move, best_move: Optional[ches
         struct = [(pr, f"after the recapture {rsan}, {t}")
                   for pr, t in _structural_changes(before, after_reply, mover, eval_after_cp, mate_after)]
         if before.is_capture(move):
+            def material_for(board):
+                return sum(VALUE[p.piece_type] * (1 if p.color == mover else -1)
+                           for p in board.piece_map().values() if p.piece_type != chess.KING)
+            gain = material_for(after_reply) - material_for(before)
+            change = (f"the mover gains {gain} material points" if gain > 0 else
+                      f"the mover loses {-gain} material points" if gain < 0 else
+                      "there is no net material gain or loss in these two moves")
             struct.append((2, f"{before.san(move)} starts an exchange: the expected recapture {rsan} "
-                              f"restores the material balance, so no material is won"))
+                              f"means {change}, measured through this recapture only (later exchanges are not included)"))
     insights = move_tactics(before, move) + struct
     changed = _top(insights, MAX_MOVE_INSIGHTS)
     context = [t for t in _top(position_context(after, eval_after_cp, mate_after), MAX_CONTEXT + len(changed))
