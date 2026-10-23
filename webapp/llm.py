@@ -102,7 +102,14 @@ class DeepSeekClient:
             text = (data["choices"][0]["message"].get("content") or "").strip()
             if not text:
                 raise LLMError("DeepSeek returned an empty comment")
-            return text, data.get("usage") or {}
+            import datetime
+            usage = dict(data.get("usage") or {})
+            usage["generation"] = {
+                "provider": "deepseek", "model": data.get("model") or model,
+                "requested_model": model, "request_id": data.get("id"),
+                "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            }
+            return text, usage
         raise LLMError("DeepSeek request failed")
 
     async def aclose(self):

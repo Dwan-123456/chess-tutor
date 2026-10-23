@@ -1064,7 +1064,13 @@ function renderPanel() {
   const animate = fresh && !!c?.text && S.playing;
 
   let body = '';
-  if (c && c.text) body = `<p class="ctext ${animate ? '' : 'instant'}">${wordsHtml(c.text)}</p>`;
+  if (c && c.text) {
+    const src = c.generation;
+    const sourceLabel = src?.provider === 'deepseek'
+      ? `DeepSeek API 实时生成 · ${esc(src.model)} · ${esc(new Date(src.generated_at).toLocaleString())}`
+      : '模型解说 · 来源未验证';
+    body = `<div class="who">${sourceLabel}</div>${src?.request_id ? `<div class="note">请求编号：${esc(src.request_id)}</div>` : ''}<p class="ctext ${animate ? '' : 'instant'}">${wordsHtml(c.text)}</p>`;
+  }
   else if (c && c.error) body = `<div class="cerr">${esc(c.error)}</div>`;
   else if (S.engineOn && (S.streaming || !S.streamErr)) body = `<div class="pending"><div class="ln"></div><div class="ln"></div><div class="ln"></div>
       <div class="cap">${e ? 'Writing commentary…' : 'Stockfish is still on its way to this move…'}</div></div>`;
@@ -1076,10 +1082,10 @@ function renderPanel() {
     if (e.principal_variation_san?.length) parts.push(`<div class="fact">Expected continuation: <span class="san">${esc(e.principal_variation_san.slice(0, 4).join(' '))}</span></div>`);
     const ideas = [...(e.insights?.move_ideas || []), ...(e.insights?.position_context || [])].slice(0, 4);
     if (ideas.length) parts.push(`<div class="chips">${ideas.map(t => `<span class="chip">${esc(t)}</span>`).join('')}</div>`);
-    if (parts.length) facts = `<div class="facts">${parts.join('')}</div>`;
+    if (parts.length) facts = `<div class="facts"><div class="who">Stockfish 分析与规则程序提取 · 非 DeepSeek 生成</div>${parts.join('')}</div>`;
   }
   const pgnNags = p.nags.map(n => NAG[n]).filter(x => x && !/^[!?]+$/.test(x));
-  const anno = p.comment ? `<div class="anno"><span class="who">From the PGN${g.headers.Annotator && !/^https?:/.test(g.headers.Annotator) ? ' · ' + esc(g.headers.Annotator) : ''}</span>${esc(p.comment).replace(/\n/g, '<br>')}</div>` : '';
+  const anno = p.comment ? `<details class="anno"><summary class="who">棋谱原有注释 · 非本次生成（点击展开）</summary>${esc(p.comment).replace(/\n/g, '<br>')}</details>` : '';
 
   el.innerHTML = `<div class="chead">
       <span class="mv"><small>${num}${white ? '.' : '…'}</small>${esc(p.san)}${gl.g ? `<span style="color:var(--qc)">${esc(gl.g)}</span>` : ''}${pgnNags.length ? ` <small>${esc(pgnNags.join(' '))}</small>` : ''}</span>

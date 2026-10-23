@@ -107,9 +107,11 @@ class GamePipeline:
             sys_p, user_p = app_prompts.build_student_prompt(app_prompts.facts_from_teacher_prompt(user_p), history)
             factcheck = False
         cost = 0.0
+        generation = None
         try:
             async with self.llm_sem:
                 text, usage = await self.llm.chat(self.s.model, sys_p, user_p)
+                generation = usage.get("generation")
                 cost += self.s.cost(self.s.model, usage)
                 if factcheck:
                     fsys, fuser = app_prompts.build_factcheck_prompt(user_p, text)
@@ -125,7 +127,7 @@ class GamePipeline:
             self.store.add_spend(cost)
             return {"type": "comment", "ply": ply, "error": f"Commentary unavailable ({e})."}
         self.store.add_spend(cost)
-        return {"type": "comment", "ply": ply, "text": text, "_cost": cost}
+        return {"type": "comment", "ply": ply, "text": text, "generation": generation, "_cost": cost}
 
     # ---------------------------------------------------------------- orchestration
     async def run(self, game: chess.pgn.Game, factcheck: bool, cancel: threading.Event):
@@ -133,7 +135,8 @@ class GamePipeline:
         plies = sum(1 for _ in game.mainline_moves())
         key = cache_key(game, self.s, factcheck)
 
-        cached = self.store.get_cached(key)
+        # DeepSeek requests must be fresh: legacy cache records have no provenance.
+        cached = None if self.s.commentator_backend == "deepseek" else self.store.get_cached(key)
         if cached is not None:
             yield {"type": "meta", "headers": headers, "plies": plies, "cached": True}
             for ev in cached:
@@ -194,7 +197,7 @@ class GamePipeline:
                         for t in tasks:
                             t.cancel()
                         return
-            if not failed:
+            if not failed and self.s.commentator_backend != "deepseek":
                 self.store.put_cached(key, events)
             yield {"type": "done", "cost_usd": round(total_cost, 5), "cached": False}
         finally:
