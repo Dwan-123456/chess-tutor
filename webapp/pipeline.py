@@ -71,6 +71,7 @@ def analysis_signature(game: chess.pgn.Game, settings: Settings, factcheck: bool
         "v": PIPELINE_VERSION, "model": settings.model, "effort": settings.reasoning_effort,
         "factcheck": factcheck, "fc_model": settings.factcheck_model if factcheck else None,
         "depth": settings.engine_depth,
+        "threads": settings.engine_threads, "hash_mb": settings.engine_hash_mb,
         "backend": settings.commentator_backend,
         "rules": rules_fingerprint(), "engine": engine_fingerprint(settings.stockfish_path),
         "endpoint": hashlib.sha256(settings.deepseek_base_url.encode()).hexdigest(),
@@ -99,6 +100,9 @@ class GamePipeline:
     def _engine_run(self, game, on_move):
         analyser = features._make_analyser("local", self.s.stockfish_path, self.s.engine_depth, 1)
         try:
+            # Configure Threads before allocating the transposition table.
+            analyser.engine.configure({"Threads": self.s.engine_threads})
+            analyser.engine.configure({"Hash": self.s.engine_hash_mb})
             features._analyze_parsed_game(game, analyser, self.s.max_plies, on_move=on_move)
         finally:
             analyser.close()

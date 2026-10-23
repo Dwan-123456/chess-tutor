@@ -30,3 +30,5 @@ Stockfish：https://github.com/official-stockfish/Stockfish/releases/tag/sf_19�
 完整成功的 DeepSeek 分析自动保存为 `history/<分析标识>.json`。记录含棋谱主线、原始模型输出、规则指纹、请求编号和原始用量；不保存 API 密钥。
 相同起始局面与主线、规则和提示词文件、引擎版本、深度、模型及事实检查配置一致时复用。规则或提示词代码变化自动失效；旧记录保留。未完成、出错或损坏的记录不会复用。
 复用时本次费用为零，界面不增加历史记录标签。此前未落盘的分析需要首次重新生成。
+
+引擎配置：Depth 30，Threads 10，Hash 8192MB，同时最多分析 1 盘棋。可通过 ENGINE_DEPTH、ENGINE_THREADS、ENGINE_HASH_MB、MAX_CONCURRENT_GAMES 设置；搜索参数变化自动使旧历史记录不再匹配。

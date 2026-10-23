@@ -21,6 +21,12 @@ class HistoryTests(unittest.TestCase):
         with patch('webapp.pipeline.rules_fingerprint', return_value='changed'):
             self.assertNotEqual(key, cache_key(self.game, self.settings, False))
         self.assertNotEqual(key, cache_key(self.game, self.settings, True))
+        self.settings.engine_threads += 1
+        self.assertNotEqual(key, cache_key(self.game, self.settings, False))
+        self.settings.engine_threads -= 1
+        self.settings.engine_hash_mb += 1
+        self.assertNotEqual(key, cache_key(self.game, self.settings, False))
+        self.settings.engine_hash_mb -= 1
         self.settings.engine_depth += 1
         self.assertNotEqual(key, cache_key(self.game, self.settings, False))
 

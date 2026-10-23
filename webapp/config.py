@@ -47,11 +47,13 @@ class Settings:
 
     stockfish_path: str = field(default_factory=lambda: _env("STOCKFISH_PATH", "stockfish"))
     engine_depth: int = field(default_factory=lambda: _env("ENGINE_DEPTH", 30, int))
+    engine_threads: int = field(default_factory=lambda: _env("ENGINE_THREADS", 10, int))
+    engine_hash_mb: int = field(default_factory=lambda: _env("ENGINE_HASH_MB", 8192, int))
 
     max_pgn_chars: int = field(default_factory=lambda: _env("MAX_PGN_CHARS", 30000, int))
     max_plies: int = field(default_factory=lambda: _env("MAX_PLIES", 1000, int))
 
-    max_concurrent_games: int = field(default_factory=lambda: _env("MAX_CONCURRENT_GAMES", 2, int))
+    max_concurrent_games: int = field(default_factory=lambda: _env("MAX_CONCURRENT_GAMES", 1, int))
     queue_wait_s: float = field(default_factory=lambda: _env("QUEUE_WAIT_S", 30.0, float))
     llm_concurrency: int = field(default_factory=lambda: _env("LLM_CONCURRENCY", 6, int))
     games_per_ip_per_hour: int = field(default_factory=lambda: _env("GAMES_PER_IP_PER_HOUR", 10, int))
