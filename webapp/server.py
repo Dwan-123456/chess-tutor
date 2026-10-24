@@ -27,6 +27,7 @@ from .config import Settings
 from .llm import DeepSeekClient, GroqClient, LlamaServerClient, MockClient, StudentClient
 from .pipeline import GamePipeline, PGNError, parse_single_game, cache_key
 from .store import Store
+from . import engine_settings
 
 STATIC = Path(__file__).parent / "static"
 
@@ -34,6 +35,7 @@ STATIC = Path(__file__).parent / "static"
 class AnnotateRequest(BaseModel):
     pgn: str = Field(..., min_length=1)
     factcheck: bool | None = None
+    engine: engine_settings.EngineSettings | None = None
 
 
 class RateLimiter:
@@ -58,6 +60,7 @@ class RateLimiter:
 async def lifespan(app: FastAPI):
     s = Settings()
     app.state.settings = s
+    app.state.engine_defaults = engine_settings.load(s)
     app.state.analysis_locks = {}
     app.state.store = Store(s.db_path)
     if s.commentator_backend == "disabled":
@@ -85,9 +88,12 @@ async def lifespan(app: FastAPI):
     app.state.llm_sem = asyncio.Semaphore(s.llm_concurrency)
     app.state.game_sem = asyncio.Semaphore(s.max_concurrent_games)
     app.state.limiter = RateLimiter(s.games_per_ip_per_hour)
-    yield
-    if app.state.llm is not None:
-        await app.state.llm.aclose()
+    try:
+        yield
+    finally:
+        if app.state.llm is not None:
+            await app.state.llm.aclose()
+        app.state.store.close()
 
 
 app = FastAPI(title="Chess commentary", lifespan=lifespan)
@@ -109,10 +115,23 @@ async def health(request: Request):
             "spent_today_usd": round(store.spent_today(), 4), "daily_budget_usd": s.daily_budget_usd}
 
 
+@app.get("/api/settings/engine")
+async def get_engine_settings(request: Request):
+    return engine_settings.response(request.app.state.engine_defaults)
+
+
+@app.put("/api/settings/engine")
+async def put_engine_settings(value: engine_settings.EngineSettings, request: Request):
+    engine_settings.save(value)
+    request.app.state.engine_defaults = value
+    return engine_settings.response(value)
+
+
 @app.post("/api/annotate")
 async def annotate(req: AnnotateRequest, request: Request):
     st = request.app.state
-    s: Settings = st.settings
+    # Freeze the parameters before queueing, never mutate a running game's settings.
+    s: Settings = (req.engine or st.engine_defaults).apply(st.settings)
     try:
         game = parse_single_game(req.pgn, s)
     except PGNError as e:

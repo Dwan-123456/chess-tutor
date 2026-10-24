@@ -32,3 +32,7 @@ Stockfish：https://github.com/official-stockfish/Stockfish/releases/tag/sf_19�
 复用时本次费用为零，界面不增加历史记录标签。此前未落盘的分析需要首次重新生成。
 
 引擎配置：Depth 30，Threads 10，Hash 8192MB，同时最多分析 1 盘棋。可通过 ENGINE_DEPTH、ENGINE_THREADS、ENGINE_HASH_MB、MAX_CONCURRENT_GAMES 设置；搜索参数变化自动使旧历史记录不再匹配。
+
+## 网页引擎设置
+右上角 Setting 打开三项滑动条，参数自动保存到 `runtime/engine-settings.json`，后续重启仍生效。取值范围：线程 1 到本机逻辑处理器数，Hash 256MB 到 32GB（每档 256MB），深度 1 到 40。
+设置仅影响下一次载入棋局；当前棋局与重试使用载入时的参数快照。不同参数的历史分析不会混用。

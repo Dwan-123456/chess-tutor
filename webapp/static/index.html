@@ -54,6 +54,20 @@ button{font:inherit;color:inherit}
 .btn.primary:hover{background:#e5c182}
 .btn.ghost{background:transparent}
 .btn:disabled{opacity:.45;cursor:default}
+.engine-settings{position:absolute;right:28px;top:calc(100% + 14px);width:320px;max-width:calc(100vw - 32px);padding:22px;
+  background:linear-gradient(145deg,var(--surface2),var(--surface));border:1px solid var(--line2);border-radius:var(--radius);box-shadow:0 20px 48px rgba(0,0,0,.4)}
+.engine-settings h2{font:500 18px var(--sans);margin:0 0 6px}
+.engine-settings .settings-note{font-size:12px;color:var(--faint);margin:0 0 24px}
+.engine-setting{display:block;margin:0 0 22px}
+.engine-setting:last-of-type{margin-bottom:8px}
+.engine-setting .setting-label{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px;font-size:13.5px;color:var(--muted)}
+.engine-setting output{font:13px var(--mono);color:var(--accent)}
+.engine-setting input{display:block;appearance:none;width:100%;height:4px;margin:12px 0;background:linear-gradient(to right,var(--accent) var(--fill,0%),var(--surface3) var(--fill,0%));border-radius:999px;cursor:pointer}
+.engine-setting input::-webkit-slider-thumb{appearance:none;width:15px;height:15px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
+.engine-setting input::-moz-range-thumb{width:15px;height:15px;border:0;border-radius:50%;background:var(--accent)}
+.engine-setting input:focus-visible{outline:2px solid var(--accent);outline-offset:6px}
+.settings-state{min-height:18px;font-size:12px;color:var(--faint);margin-top:18px}
+#engineSettingsButton[aria-expanded="true"]{border-color:var(--accent);color:var(--accent)}
 
 /* ---------- landing ---------- */
 #landing{max-width:760px;margin:0 auto;padding:64px 24px 80px}
@@ -285,7 +299,16 @@ kbd{font:500 11px var(--mono);border:1px solid var(--line2);border-bottom-width:
   <div class="spacer"></div>
   <span class="pill" id="totalCost">0.0000 CNY</span>
   <span class="pill" id="health"><i></i><span>Checking server…</span></span>
+  <button class="btn ghost" id="engineSettingsButton" aria-expanded="false" aria-controls="engineSettingsPanel" disabled>Setting</button>
   <button class="btn ghost" id="newGame" hidden>New game</button>
+  <section class="engine-settings" id="engineSettingsPanel" aria-label="Stockfish settings" hidden>
+    <h2>Stockfish</h2>
+    <p class="settings-note">自动保存 · 下一局棋局生效</p>
+    <label class="engine-setting"><span class="setting-label">搜索线程 <output id="threadsValue" for="engineThreads">10</output></span><input id="engineThreads" type="range" aria-label="搜索线程" min="1" max="20" step="1" value="10"></label>
+    <label class="engine-setting"><span class="setting-label">Hash 内存 <output id="hashValue" for="engineHash">8 GB</output></span><input id="engineHash" type="range" aria-label="Hash 内存" min="256" max="32768" step="256" value="8192"></label>
+    <label class="engine-setting"><span class="setting-label">搜索深度 <output id="depthValue" for="engineDepth">30</output></span><input id="engineDepth" type="range" aria-label="搜索深度" min="1" max="40" step="1" value="30"></label>
+    <div class="settings-state" id="engineSettingsState" aria-live="polite"></div>
+  </section>
 </header>
 
 <!-- ================= LANDING ================= -->
@@ -661,6 +684,48 @@ const S = {
 };
 const N = () => S.game ? S.game.plies.length : 0;
 
+/* ---------------------------------------------------------- engine defaults */
+let engineDefaults = null;
+let engineSave = Promise.resolve();
+const engineControls = {threads: ['engineThreads','threadsValue'], hash_mb: ['engineHash','hashValue'], depth: ['engineDepth','depthValue']};
+function paintEngineSetting(key) {
+  const [id,out] = engineControls[key], slider = $('#' + id), value = +slider.value;
+  $('#' + out).textContent = key === 'hash_mb' ? `${+(value / 1024).toFixed(2)} GB` : value;
+  slider.style.setProperty('--fill', `${(value-slider.min)/(slider.max-slider.min)*100}%`);
+}
+function applyEngineControls(data) {
+  for (const key of Object.keys(engineControls)) {
+    const slider = $('#' + engineControls[key][0]);
+    Object.assign(slider, data.limits[key]); slider.value = data.engine[key]; paintEngineSetting(key);
+  }
+}
+const engineReady = fetch(API + '/api/settings/engine').then(async r => {
+  if (!r.ok) throw new Error('无法读取引擎设置');
+  const data = await r.json(); engineDefaults = data.engine; applyEngineControls(data);
+  $('#engineSettingsButton').disabled = false;
+}).catch(e => { $('#engineSettingsState').textContent = e.message; });
+for (const key of Object.keys(engineControls)) {
+  const slider = $('#' + engineControls[key][0]);
+  slider.oninput = () => paintEngineSetting(key);
+  slider.onchange = () => {
+    const value = Object.fromEntries(Object.entries(engineControls).map(([k,[id]]) => [k,+$('#' + id).value]));
+    $('#engineSettingsState').textContent = '保存中…';
+    engineSave = engineSave.then(async () => {
+      const r = await fetch(API + '/api/settings/engine', {method:'PUT', headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});
+      if (!r.ok) throw new Error('保存失败，请重试');
+      const data = await r.json(); engineDefaults = data.engine;
+      $('#engineSettingsState').textContent = '已保存 · 下一局生效';
+    }).catch(e => { $('#engineSettingsState').textContent = e.message; toast(e.message,true); });
+  };
+}
+function closeEngineSettings() { $('#engineSettingsPanel').hidden = true; $('#engineSettingsButton').setAttribute('aria-expanded','false'); }
+$('#engineSettingsButton').onclick = () => {
+  const panel = $('#engineSettingsPanel'); panel.hidden = !panel.hidden;
+  $('#engineSettingsButton').setAttribute('aria-expanded',String(!panel.hidden));
+};
+document.addEventListener('click', e => { if (!e.target.closest('#engineSettingsPanel, #engineSettingsButton')) closeEngineSettings(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeEngineSettings(); });
+
 /* ---------------------------------------------------------------- health */
 async function checkHealth() {
   const pill = $('#health');
@@ -736,12 +801,14 @@ function renderPicker(filter = '') {
 }
 
 /* ---------------------------------------------------------------- game */
-function startGame(raw) {
+async function startGame(raw) {
+  await engineReady; await engineSave;
   const g = parseGame(raw);
   if (!g.plies.length) return toast(g.error || 'That game has no moves.', true);
   stopPlaying();
   if (S.abort) S.abort.abort();
   Object.assign(S, { game: g, ply: 0, ev: {}, cm: {}, meta: null, done: null, streamErr: null, streaming: false });
+  S.engineSettings = engineDefaults ? {...engineDefaults} : null;
   S.engineOn = $('#optEngine').checked && !!S.backend;
   S.factcheck = $('#optFact').checked;
   $('#landing').hidden = true; $('#viewer').hidden = false; $('#newGame').hidden = false;
@@ -760,7 +827,7 @@ async function stream() {
   try {
     const r = await fetch(API + '/api/annotate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pgn: g.raw, factcheck: S.factcheck }), signal: ctl.signal,
+      body: JSON.stringify({ pgn: g.raw, factcheck: S.factcheck, engine: S.engineSettings }), signal: ctl.signal,
     });
     if (!r.ok) {
       let msg = 'HTTP ' + r.status;

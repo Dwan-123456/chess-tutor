@@ -22,6 +22,10 @@ class Store:
     def _today() -> str:
         return dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d")
 
+    def close(self):
+        with self._lock:
+            self._db.close()
+
     def get_cached(self, key: str):
         with self._lock:
             row = self._db.execute("SELECT events FROM cache WHERE key = ?", (key,)).fetchone()
