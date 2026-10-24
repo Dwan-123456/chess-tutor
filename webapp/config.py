@@ -49,6 +49,7 @@ class Settings:
     engine_depth: int = field(default_factory=lambda: _env("ENGINE_DEPTH", 30, int))
     engine_threads: int = field(default_factory=lambda: _env("ENGINE_THREADS", 10, int))
     engine_hash_mb: int = field(default_factory=lambda: _env("ENGINE_HASH_MB", 8192, int))
+    tablebase_enabled: bool = field(default_factory=lambda: _env("TABLEBASE_ENABLED", True, bool))
 
     max_pgn_chars: int = field(default_factory=lambda: _env("MAX_PGN_CHARS", 30000, int))
     max_plies: int = field(default_factory=lambda: _env("MAX_PLIES", 1000, int))

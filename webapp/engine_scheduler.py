@@ -10,6 +10,7 @@ import chess.engine
 
 from chess_annotator import features
 from .cpu_scheduling import selected_policy
+from .tablebase import OnlineTablebase
 
 log = logging.getLogger(__name__)
 
@@ -86,6 +87,7 @@ class EngineScheduler:
         self._closed = False
         self._engine = None
         self._path = None
+        self.tablebase = OnlineTablebase()
 
     def submit(self, game, settings, on_move, cancel):
         job = EngineJob(cancel)
@@ -140,9 +142,14 @@ class EngineScheduler:
             job.check()
             engine = self._prepare(settings)
             job.check()
+            tablebase_board = game.board()
 
             def publish(move):
                 job.check()
+                before_board = tablebase_board.copy()
+                tablebase_board.push_uci(move['uci'])
+                if settings.tablebase_enabled:
+                    self.tablebase.enrich(move, job.check, before_board, tablebase_board)
                 on_move(move)
 
             return features._analyze_parsed_game(
@@ -166,3 +173,4 @@ class EngineScheduler:
         # Queued jobs finish/cancel before the final engine cleanup runs.
         self._pool.submit(self._discard_engine)
         self._pool.shutdown(wait=True)
+        self.tablebase.close()

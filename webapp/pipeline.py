@@ -33,7 +33,7 @@ from .cpu_scheduling import selected_policy
 MOVE_FIELDS = ("ply", "move_number", "side", "san", "uci", "fen_before", "fen_after", "phase",
                "eval_before_cp", "eval_after_cp", "mate_before", "mate_after", "cp_loss",
                "quality_label", "nag_symbol", "is_best_move", "best_move_san",
-               "principal_variation_san", "captured_piece", "material_after", "tags", "is_checkmate", "winner", "result")
+               "principal_variation_san", "captured_piece", "material_after", "tags", "is_checkmate", "winner", "result", "tablebase")
 
 
 class PGNError(ValueError):
@@ -71,6 +71,7 @@ def analysis_signature(game: chess.pgn.Game, settings: Settings, factcheck: bool
         "depth": settings.engine_depth,
         "threads": settings.engine_threads, "hash_mb": settings.engine_hash_mb,
         "cpu_policy": selected_policy(settings),
+        "tablebase": 'lichess-seven-wdl50-v1' if settings.tablebase_enabled else None,
         "backend": settings.commentator_backend,
         "rules": rules_fingerprint(), "engine": engine_fingerprint(settings.stockfish_path),
         "endpoint": hashlib.sha256(settings.deepseek_base_url.encode()).hexdigest(),
@@ -185,6 +186,8 @@ class GamePipeline:
                 kind, payload = await q.get()
                 if kind == "move":
                     m = payload
+                    if m.get('tablebase_unavailable'):
+                        failed = True  # Retry missing exact facts on a later analysis.
                     try:
                         insights = positional.insights_for_move_record(m)
                     except Exception:  # noqa: BLE001 -- a detector bug must not kill the game

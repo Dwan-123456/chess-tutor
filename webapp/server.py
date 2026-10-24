@@ -115,6 +115,7 @@ async def health(request: Request):
     s, store = request.app.state.settings, request.app.state.store
     return {"ok": True, "application": "chess-annotator-desktop", "model": s.model, "backend": s.commentator_backend,
             "factcheck_default": s.factcheck_default,
+            "tablebase": {"enabled": s.tablebase_enabled, "provider": "Lichess", "max_pieces": 7},
             "spent_today_usd": round(store.spent_today(), 4), "daily_budget_usd": s.daily_budget_usd}
 
 

@@ -39,6 +39,10 @@ How to write the annotation:
 - If is_checkmate is true, winner and result are authoritative: the game is over.
   Praise the completed checkmate; never call it a missed mate or suggest a better move.
   mate_in=0 at game end has no signed winner information; do not infer the winner from zero.
+- When tablebase is present, its exact win/draw/loss under the fifty-move rule takes
+  precedence over a finite-depth Stockfish evaluation. DTZ counts half-moves until
+  a capture or pawn move; it is NOT a distance to checkmate. Preserving a tablebase
+  win is not losing the win merely because a mate distance or DTZ increased.
 - Write 2-4 sentences of natural prose, like a strong human annotator. No bullet points, no \
 headings, no restating the JSON.
 - Lead with the most important idea. Pick the one or two insights that best explain the move; \
@@ -95,6 +99,20 @@ def build_app_move_prompt(move: dict, history: list | None, insights: dict | Non
     for key in ("move_ideas", "position_context", "best_move_ideas", "opponent_reply_ideas"):
         record[key] = insights.get(key, [])
     record["pieces_after"] = _pieces(move["fen_after"])
+    tb = move.get('tablebase')
+    if tb:
+        record['tablebase'] = tb
+        for phase in ('before', 'after'):
+            facts = tb.get(phase)
+            if facts and not (phase == 'after' and move.get('is_checkmate')):
+                value = facts['white_outcome']
+                meaning = ('The position is a theoretical draw under the fifty-move rule.' if value == 0 else
+                           f"{'White' if value > 0 else 'Black'} has a theoretical win under the fifty-move rule.")
+                record['eval_' + phase] = {'cp': None, 'pawns': None, 'mate_in': None,
+                                           'meaning': meaning, 'source': 'Lichess seven-piece Syzygy'}
+        if not move.get('is_checkmate'):
+            record['eval_change_for_mover'] = {'cp': None, 'pawns': None,
+                'meaning': 'Use the before/after evaluation blocks. Only a side with tablebase facts has an exact outcome; do not infer an exact outcome for a missing side. DTZ is not mate distance; no pawn-valued loss is implied.'}
     hist = [{k: h[k] for k in ("ply", "side", "san", "quality_label")} for h in (history or [])]
     user = MOVE_USER_TEMPLATE.format(move_json=json.dumps(record, indent=2),
                                      history_json=json.dumps(hist, indent=2) if hist else "null")
