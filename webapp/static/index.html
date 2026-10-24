@@ -67,7 +67,8 @@ button{font:inherit;color:inherit}
 .engine-setting input::-moz-range-thumb{width:15px;height:15px;border:0;border-radius:50%;background:var(--accent)}
 .engine-setting input:focus-visible{outline:2px solid var(--accent);outline-offset:6px}
 .settings-state{min-height:18px;font-size:12px;color:var(--faint);margin-top:18px}
-#engineSettingsButton[aria-expanded="true"]{border-color:var(--accent);color:var(--accent)}
+#engineSettingsButton{border-color:rgba(255,255,255,.65);color:#fff}
+#engineSettingsButton:hover,#engineSettingsButton[aria-expanded="true"]{border-color:#fff;color:#fff}
 
 /* ---------- landing ---------- */
 #landing{max-width:760px;margin:0 auto;padding:64px 24px 80px}
@@ -299,14 +300,14 @@ kbd{font:500 11px var(--mono);border:1px solid var(--line2);border-bottom-width:
   <div class="spacer"></div>
   <span class="pill" id="totalCost">0.0000 CNY</span>
   <span class="pill" id="health"><i></i><span>Checking server…</span></span>
-  <button class="btn ghost" id="engineSettingsButton" aria-expanded="false" aria-controls="engineSettingsPanel" disabled>Setting</button>
+  <button class="btn ghost" id="engineSettingsButton" aria-expanded="false" aria-controls="engineSettingsPanel">Setting</button>
   <button class="btn ghost" id="newGame" hidden>New game</button>
   <section class="engine-settings" id="engineSettingsPanel" aria-label="Stockfish settings" hidden>
     <h2>Stockfish</h2>
     <p class="settings-note">自动保存 · 下一局棋局生效</p>
-    <label class="engine-setting"><span class="setting-label">搜索线程 <output id="threadsValue" for="engineThreads">10</output></span><input id="engineThreads" type="range" aria-label="搜索线程" min="1" max="20" step="1" value="10"></label>
-    <label class="engine-setting"><span class="setting-label">Hash 内存 <output id="hashValue" for="engineHash">8 GB</output></span><input id="engineHash" type="range" aria-label="Hash 内存" min="256" max="32768" step="256" value="8192"></label>
-    <label class="engine-setting"><span class="setting-label">搜索深度 <output id="depthValue" for="engineDepth">30</output></span><input id="engineDepth" type="range" aria-label="搜索深度" min="1" max="40" step="1" value="30"></label>
+    <label class="engine-setting"><span class="setting-label">搜索线程 <output id="threadsValue" for="engineThreads">10</output></span><input id="engineThreads" type="range" aria-label="搜索线程" min="1" max="20" step="1" value="10" disabled></label>
+    <label class="engine-setting"><span class="setting-label">Hash 内存 <output id="hashValue" for="engineHash">8 GB</output></span><input id="engineHash" type="range" aria-label="Hash 内存" min="256" max="32768" step="256" value="8192" disabled></label>
+    <label class="engine-setting"><span class="setting-label">搜索深度 <output id="depthValue" for="engineDepth">30</output></span><input id="engineDepth" type="range" aria-label="搜索深度" min="1" max="40" step="1" value="30" disabled></label>
     <div class="settings-state" id="engineSettingsState" aria-live="polite"></div>
   </section>
 </header>
@@ -696,13 +697,12 @@ function paintEngineSetting(key) {
 function applyEngineControls(data) {
   for (const key of Object.keys(engineControls)) {
     const slider = $('#' + engineControls[key][0]);
-    Object.assign(slider, data.limits[key]); slider.value = data.engine[key]; paintEngineSetting(key);
+    Object.assign(slider, data.limits[key]); slider.value = data.engine[key]; slider.disabled = false; paintEngineSetting(key);
   }
 }
 const engineReady = fetch(API + '/api/settings/engine').then(async r => {
   if (!r.ok) throw new Error('无法读取引擎设置');
   const data = await r.json(); engineDefaults = data.engine; applyEngineControls(data);
-  $('#engineSettingsButton').disabled = false;
 }).catch(e => { $('#engineSettingsState').textContent = e.message; });
 for (const key of Object.keys(engineControls)) {
   const slider = $('#' + engineControls[key][0]);
@@ -739,9 +739,6 @@ async function checkHealth() {
     pill.className = 'pill ok';
     const model = h.backend === 'mock' ? 'mock backend' : h.backend?.startsWith('student') ? 'student model v3' + (h.backend === 'student_gguf' ? ' · llama.cpp' : '') : (h.model || '').replace(/^.*\//, '');
     pill.lastElementChild.textContent = 'Live · ' + model;
-    if (h.backend === 'deepseek') {
-      $('#optNote').textContent = 'Stockfish 19 本地分析 · DeepSeek 中文解说。启用事实检查会增加一次模型调用；费用显示为估算，以阿里云账单为准。';
-    }
     if (h.backend === 'disabled') {
       pill.lastElementChild.textContent = 'Stockfish 19 · 解说未接入';
       $('#optFact').checked = false; $('#optFact').closest('label').hidden = true;
