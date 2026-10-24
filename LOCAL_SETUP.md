@@ -36,3 +36,19 @@ Stockfish：https://github.com/official-stockfish/Stockfish/releases/tag/sf_19�
 ## 网页引擎设置
 右上角 Setting 打开三项滑动条，参数自动保存到 `runtime/engine-settings.json`，后续重启仍生效。取值范围：线程 1 到本机逻辑处理器数，Hash 256MB 到 32GB（每档 256MB），深度 1 到 40。
 设置仅影响下一次载入棋局；当前棋局与重试使用载入时的参数快照。不同参数的历史分析不会混用。
+
+## CPU 与引擎调度
+
+服务使用一个专用工作队列和一个常驻 Stockfish 进程，同时只执行一盘棋的搜索。退出棋局或断开连接时发送 UCI `stop`，收到停止结果后才会开始下一盘，取消时的中间评分不会写入结果。完整分析仍搜索到用户选择的深度，没有增加单步时间截断。
+
+相同配置的后续棋局复用线程池和已分配的 Hash；每盘开始用 `ucinewgame` 清理上一盘的搜索状态，盘内连续局面保留 Hash。参数变化只在下一盘应用；需要重建线程池时，先缩小旧 Hash，最后再分配目标 Hash，减少重复的大内存分配。服务关闭时释放引擎和内存。Hash 是置换表大小，进程还需要模型、线程栈等额外内存。
+
+Windows 混合架构 CPU 可以使用本机实测的核心绑定。配置保存在 `runtime/cpu-scheduling.json`，按引擎文件、CPU 拓扑、线程数和 Hash 匹配；只有相对自动调度实测吞吐量提升至少 3% 的绑定才启用。未校准或不支持的配置使用 Stockfish `NumaPolicy=auto`。本机 13600KF 的 10 线程、8GB Hash 已校准为优先独立物理核，避免部分搜索线程共享同一性能核的超线程资源。
+
+重新校准请在没有棋局分析时运行（只运行本地 Stockfish，不调用 DeepSeek）：
+
+```powershell
+.\.venv\Scripts\python.exe -m webapp.benchmark_engine --threads 10 --hash-mb 8192
+```
+
+基准交替测试自动调度和物理核优先方案，在两个局面上重复四轮，每个局面两秒。测量的是搜索节点吞吐量，并非固定深度或整盘分析耗时的保证。

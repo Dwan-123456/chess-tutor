@@ -23,10 +23,12 @@ import threading
 import chess
 import chess.pgn
 
-from chess_annotator import app_prompts, features, positional, prompts
+from chess_annotator import app_prompts, positional, prompts
 
 from .config import PIPELINE_VERSION, Settings
 from .history import History, rules_fingerprint, engine_fingerprint
+from .engine_scheduler import AnalysisCancelled
+from .cpu_scheduling import selected_policy
 
 MOVE_FIELDS = ("ply", "move_number", "side", "san", "uci", "fen_before", "fen_after", "phase",
                "eval_before_cp", "eval_after_cp", "mate_before", "mate_after", "cp_loss",
@@ -35,10 +37,6 @@ MOVE_FIELDS = ("ply", "move_number", "side", "san", "uci", "fen_before", "fen_af
 
 
 class PGNError(ValueError):
-    pass
-
-
-class _Cancelled(Exception):
     pass
 
 
@@ -72,6 +70,7 @@ def analysis_signature(game: chess.pgn.Game, settings: Settings, factcheck: bool
         "factcheck": factcheck, "fc_model": settings.factcheck_model if factcheck else None,
         "depth": settings.engine_depth,
         "threads": settings.engine_threads, "hash_mb": settings.engine_hash_mb,
+        "cpu_policy": selected_policy(settings),
         "backend": settings.commentator_backend,
         "rules": rules_fingerprint(), "engine": engine_fingerprint(settings.stockfish_path),
         "endpoint": hashlib.sha256(settings.deepseek_base_url.encode()).hexdigest(),
@@ -90,22 +89,12 @@ def _move_event(m: dict, insights: dict) -> dict:
 
 
 class GamePipeline:
-    def __init__(self, settings: Settings, llm, store, llm_semaphore: asyncio.Semaphore):
+    def __init__(self, settings: Settings, llm, store, llm_semaphore: asyncio.Semaphore, engine_scheduler):
         self.s = settings
         self.llm = llm
         self.store = store
         self.llm_sem = llm_semaphore
-
-    # ---------------------------------------------------------------- engine (thread)
-    def _engine_run(self, game, on_move):
-        analyser = features._make_analyser("local", self.s.stockfish_path, self.s.engine_depth, 1)
-        try:
-            # Configure Threads before allocating the transposition table.
-            analyser.engine.configure({"Threads": self.s.engine_threads})
-            analyser.engine.configure({"Hash": self.s.engine_hash_mb})
-            features._analyze_parsed_game(game, analyser, self.s.max_plies, on_move=on_move)
-        finally:
-            analyser.close()
+        self.engine_scheduler = engine_scheduler
 
     # ---------------------------------------------------------------- commentary
     async def _comment(self, m: dict, history: list, insights: dict, factcheck: bool) -> dict:
@@ -175,11 +164,19 @@ class GamePipeline:
 
         def on_move(m):
             if cancel.is_set():
-                raise _Cancelled()
+                raise AnalysisCancelled()
             loop.call_soon_threadsafe(q.put_nowait, ("move", m))
 
-        engine_future = asyncio.ensure_future(asyncio.to_thread(self._engine_run, game, on_move))
-        engine_future.add_done_callback(lambda f: q.put_nowait(("engine_done", f)))
+        engine_job = self.engine_scheduler.submit(game, self.s, on_move, cancel)
+        engine_future = asyncio.wrap_future(engine_job.future)
+
+        def engine_finished(future):
+            # Also retrieve errors after a disconnected stream has stopped consuming q.
+            if not future.cancelled():
+                future.exception()
+            q.put_nowait(("engine_done", future))
+
+        engine_future.add_done_callback(engine_finished)
 
         moves, events, tasks = [], [], set()
         engine_done, comments_pending, total_cost, failed = False, 0, 0.0, False
@@ -213,10 +210,10 @@ class GamePipeline:
                     yield ev
                 elif kind == "engine_done":
                     engine_done = True
-                    exc = payload.exception()
+                    exc = AnalysisCancelled() if payload.cancelled() else payload.exception()
                     if exc is not None:
                         failed = True
-                        msg = "Analysis was cancelled." if isinstance(exc, _Cancelled) else f"Engine analysis failed: {exc}"
+                        msg = "Analysis was cancelled." if isinstance(exc, AnalysisCancelled) else f"Engine analysis failed: {exc}"
                         yield {"type": "error", "message": msg}
                         for t in tasks:
                             t.cancel()
@@ -236,5 +233,6 @@ class GamePipeline:
             yield {"type": "done", "cost_usd": round(total_cost, 5), "billing": summary, "cached": False}
         finally:
             cancel.set()
+            engine_job.stop()
             for t in tasks:
                 t.cancel()

@@ -10,7 +10,8 @@ from functools import lru_cache
 ROOT = Path(__file__).resolve().parent.parent
 RULE_FILES = ('chess_annotator/features.py', 'chess_annotator/positional.py',
               'chess_annotator/prompts.py', 'chess_annotator/app_prompts.py',
-              'webapp/pipeline.py', 'webapp/llm.py')
+              'webapp/pipeline.py', 'webapp/llm.py',
+              'webapp/engine_scheduler.py', 'webapp/cpu_scheduling.py')
 
 
 def rules_fingerprint():

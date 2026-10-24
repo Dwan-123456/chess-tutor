@@ -28,6 +28,7 @@ from .llm import DeepSeekClient, GroqClient, LlamaServerClient, MockClient, Stud
 from .pipeline import GamePipeline, PGNError, parse_single_game, cache_key
 from .store import Store
 from . import engine_settings
+from .engine_scheduler import EngineScheduler
 
 STATIC = Path(__file__).parent / "static"
 
@@ -61,6 +62,7 @@ async def lifespan(app: FastAPI):
     s = Settings()
     app.state.settings = s
     app.state.engine_defaults = engine_settings.load(s)
+    app.state.engine_scheduler = EngineScheduler()
     app.state.analysis_locks = {}
     app.state.store = Store(s.db_path)
     if s.commentator_backend == "disabled":
@@ -91,6 +93,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await asyncio.to_thread(app.state.engine_scheduler.close)
         if app.state.llm is not None:
             await app.state.llm.aclose()
         app.state.store.close()
@@ -146,7 +149,7 @@ async def annotate(req: AnnotateRequest, request: Request):
     factcheck = s.factcheck_default if req.factcheck is None else req.factcheck
     if s.commentator_backend.startswith("student"):
         factcheck = False
-    pipeline = GamePipeline(s, st.llm, st.store, st.llm_sem)
+    pipeline = GamePipeline(s, st.llm, st.store, st.llm_sem, st.engine_scheduler)
     cancel = threading.Event()
 
     async def stream():
@@ -164,8 +167,10 @@ async def annotate(req: AnnotateRequest, request: Request):
             yield json.dumps({"type": "error", "message": f"Unexpected server error: {e}"}) + "\n"
         finally:
             cancel.set()
-            await events.aclose()
-            st.game_sem.release()
+            try:
+                await events.aclose()
+            finally:
+                st.game_sem.release()
 
     return StreamingResponse(stream(), media_type="application/x-ndjson",
                              headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
