@@ -50,7 +50,7 @@ def normalize(board, response):
         raise ValueError('Invalid DTZ')
     return {'provider': 'Lichess Syzygy', 'pieces': len(board.piece_map()),
             'category': category, 'white_outcome': white_sign * value,
-            'dtz': dtz, 'dtz_unit': 'plies to a capture or pawn move; NOT mate distance',
+            'dtz': dtz, 'dtz_unit': 'Syzygy progress metric in plies; may be rounded or encoded; NOT mate distance',
             'fifty_move_rule': True, 'best_move_san': parsed[0]['san'],
             'best_move_uci': parsed[0]['uci'], 'moves': parsed}
 

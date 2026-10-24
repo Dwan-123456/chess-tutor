@@ -40,8 +40,9 @@ How to write the annotation:
   Praise the completed checkmate; never call it a missed mate or suggest a better move.
   mate_in=0 at game end has no signed winner information; do not infer the winner from zero.
 - When tablebase is present, its exact win/draw/loss under the fifty-move rule takes
-  precedence over a finite-depth Stockfish evaluation. DTZ counts half-moves until
-  a capture or pawn move; it is NOT a distance to checkmate. Preserving a tablebase
+  precedence over a finite-depth Stockfish evaluation. DTZ is a progress metric
+  toward a capture, pawn move or terminal mate, with rounding and special encoding;
+  it is NOT a distance to checkmate and must not be converted to mate-in-N. Preserving a tablebase
   win is not losing the win merely because a mate distance or DTZ increased.
 - Write 2-4 sentences of natural prose, like a strong human annotator. No bullet points, no \
 headings, no restating the JSON.

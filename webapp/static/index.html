@@ -1155,7 +1155,7 @@ function renderPanel() {
     if (after) parts.push(`<div class="fact">走后：${esc(fmtEval({tb:after}))}</div>`);
     if (before) parts.push(`<div class="fact">推荐着法：<span class="san">${esc(before.best_move_san)}</span>${!e.is_best_move && S.arrows ? '（虚线箭头）' : ''}</div>`);
     if (after) parts.push(`<div class="fact">对方最佳应对：<span class="san">${esc(after.best_move_san)}</span></div>`);
-    if (tb.dtz != null) parts.push(`<div class="fact">${after ? '走后' : '走前'} DTZ：${tb.dtz}（绝对值为距吃子或动兵的半回合数，非将杀步数）</div>`);
+    if (tb.dtz != null) parts.push(`<div class="fact">${after ? '走后' : '走前'} DTZ：${tb.dtz}（残局库进展指标，非将杀步数）</div>`);
     parts.push('<div class="fact">胜和负结论考虑五十步规则。</div>');
     facts = `<div class="facts"><div class="who">Lichess 七子残局库输出</div>${parts.join('')}</div>`;
   } else if (e) {
