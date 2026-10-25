@@ -12,7 +12,7 @@ from webapp.pipeline import cache_key
 class HistoryTests(unittest.TestCase):
     def setUp(self):
         self.game = chess.pgn.read_game(io.StringIO('1. e4 *'))
-        self.settings = Settings(commentator_backend='deepseek', model='deepseek-v4.1-flash-1017')
+        self.settings = Settings(engine_mode='manual', commentator_backend='deepseek', model='deepseek-v4.1-flash-1017')
 
     def test_identity_and_invalidation(self):
         key = cache_key(self.game, self.settings, False)

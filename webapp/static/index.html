@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Chess Annotator</title>
+<title>Chess Tutor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet">
@@ -54,7 +54,7 @@ button{font:inherit;color:inherit}
 .btn.primary:hover{background:#e5c182}
 .btn.ghost{background:transparent}
 .btn:disabled{opacity:.45;cursor:default}
-.engine-settings{position:absolute;right:28px;top:calc(100% + 14px);width:320px;max-width:calc(100vw - 32px);padding:22px;
+.engine-settings{position:absolute;right:28px;top:calc(100% + 14px);width:320px;max-width:calc(100vw - 32px);max-height:calc(100vh - 120px);overflow-y:auto;padding:22px;
   background:linear-gradient(145deg,var(--surface2),var(--surface));border:1px solid var(--line2);border-radius:var(--radius);box-shadow:0 20px 48px rgba(0,0,0,.4)}
 .engine-settings h2{font:500 18px var(--sans);margin:0 0 6px}
 .engine-settings .settings-note{font-size:12px;color:var(--faint);margin:0 0 24px}
@@ -66,6 +66,8 @@ button{font:inherit;color:inherit}
 .engine-setting input::-webkit-slider-thumb{appearance:none;width:15px;height:15px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px var(--accent-soft)}
 .engine-setting input::-moz-range-thumb{width:15px;height:15px;border:0;border-radius:50%;background:var(--accent)}
 .engine-setting input:focus-visible{outline:2px solid var(--accent);outline-offset:6px}
+.engine-settings select{width:100%;padding:8px;background:var(--surface3);color:var(--text);border:1px solid var(--line2);border-radius:6px}
+.effort-details{font-size:12px;line-height:1.6;color:var(--muted);margin:0 0 16px}
 .settings-state{min-height:18px;font-size:12px;color:var(--faint);margin-top:18px}
 #engineSettingsButton{border-color:rgba(255,255,255,.65);color:#fff}
 #engineSettingsButton:hover,#engineSettingsButton[aria-expanded="true"]{border-color:#fff;color:#fff}
@@ -210,11 +212,11 @@ select.tog option{background:var(--surface2)}
 .cerr{margin-top:16px;color:var(--muted);font-size:14px}
 .facts{display:flex;flex-direction:column;gap:10px;margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
 .fact{font-size:13px;color:var(--muted)}
+.search-stats{margin-top:12px;font-family:var(--mono);font-size:12px;color:var(--muted)}
 .fact b{color:var(--text);font-weight:500}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
 .chip{font-size:12px;padding:3px 9px;border-radius:7px;background:var(--surface2);border:1px solid var(--line);color:var(--muted)}
-.anno{margin-top:14px;padding:12px 14px;border-radius:10px;background:var(--surface2);border:1px solid var(--line);font-size:14px;color:var(--muted);line-height:1.55}
-.anno .who{display:block;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin-bottom:5px;font-weight:600}
+.ctext.anno{font-size:16px;margin-top:14px}
 .overview h3{font-family:var(--serif);font-weight:400;font-size:24px;margin:0 0 6px}
 .overview dl{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:14px 0 0;font-size:13.5px}
 .overview dt{color:var(--faint)}.overview dd{margin:0}
@@ -295,7 +297,7 @@ kbd{font:500 11px var(--mono);border:1px solid var(--line2);border-bottom-width:
 <header class="topbar">
   <div class="brand">
     <svg viewBox="0 0 100 100" class="w"><use href="#p-N"/></svg>
-    Annotator <small>Stockfish + AI</small>
+    Chess Tutor <small>复盘 / 实时对局</small>
   </div>
   <div class="spacer"></div>
   <span class="pill" id="totalCost">0.0000 CNY</span>
@@ -303,8 +305,21 @@ kbd{font:500 11px var(--mono);border:1px solid var(--line2);border-bottom-width:
   <button class="btn ghost" id="engineSettingsButton" aria-expanded="false" aria-controls="engineSettingsPanel">Setting</button>
   <button class="btn ghost" id="newGame" hidden>New game</button>
   <section class="engine-settings" id="engineSettingsPanel" aria-label="Stockfish settings" hidden>
-    <h2>Stockfish</h2>
+    <h2>复盘设置</h2>
+    <label class="engine-setting"><span class="setting-label">DeepSeek 思考深度</span><select id="reviewDepth"><option value="instant">instant · 即时</option><option value="high">high · 深入思考</option><option value="max">max · 最大思考</option></select></label>
+    <p class="effort-details" id="reviewDepthState">单独保存 · 下一局复盘生效</p>
     <p class="settings-note">自动保存 · 下一局棋局生效</p>
+    <label class="engine-setting"><span class="setting-label">计算模式</span><select id="engineMode" aria-label="计算模式" disabled><option value="manual">手动参数</option><option value="adaptive" selected>自适应 Effort</option><option value="stockfish">Stockfish 官方时间管理</option></select></label>
+    <div id="effortGroup" hidden>
+      <p class="effort-details">low · mid · high · xhigh · max · ultra</p>
+      <label class="engine-setting"><span class="setting-label">Effort <output id="effortValue" for="engineEffort">high</output></span><input id="engineEffort" type="range" aria-label="计算投入 Effort" min="0" max="5" step="1" value="2" disabled></label>
+      <p class="effort-details" id="effortDetails" aria-live="polite"></p>
+      <p class="effort-details">稳定局面可提前结束；达到时间上限即结束。Effort 表示计算投入，不保证分析正确率。线程与 Hash 为所有模式共用的资源设置。</p>
+    </div>
+    <div id="timeLimitGroup" hidden>
+      <label class="engine-setting"><span class="setting-label">每局面时间上限 <output id="timeLimitValue" for="engineTimeLimit">5.0 秒</output></span><input id="engineTimeLimit" type="range" aria-label="每局面时间上限（秒）" min="0.1" max="60" step="0.1" value="5" disabled></label>
+      <p class="effort-details">0.1–60 秒 · Stockfish 自主决定搜索深度与提前结束，无额外深度或节点门槛。上限不含排队、引擎初始化、残局库查询与解说生成，实际停止可能略有延迟。</p>
+    </div>
     <label class="engine-setting"><span class="setting-label">搜索线程 <output id="threadsValue" for="engineThreads">10</output></span><input id="engineThreads" type="range" aria-label="搜索线程" min="1" max="20" step="1" value="10" disabled></label>
     <label class="engine-setting"><span class="setting-label">Hash 内存 <output id="hashValue" for="engineHash">8 GB</output></span><input id="engineHash" type="range" aria-label="Hash 内存" min="256" max="32768" step="256" value="8192" disabled></label>
     <label class="engine-setting"><span class="setting-label">搜索深度 <output id="depthValue" for="engineDepth">30</output></span><input id="engineDepth" type="range" aria-label="搜索深度" min="1" max="40" step="1" value="30" disabled></label>
@@ -314,6 +329,7 @@ kbd{font:500 11px var(--mono);border:1px solid var(--line2);border-bottom-width:
 
 <!-- ================= LANDING ================= -->
 <main id="landing">
+  <div class="row" style="margin:0 0 30px"><button class="btn primary" id="openLive">开始双人实时对局</button><span class="note">同一台电脑轮流走棋，无需棋谱</span></div>
   <div class="eyebrow">Move-by-move commentary</div>
   <h1>Replay a game. <em>Read why</em> each move mattered.</h1>
   <p class="lede">Drop in a PGN. Stockfish checks every position, and the commentator turns those verified facts into prose, streaming in as the game plays out on the board.</p>
@@ -382,7 +398,7 @@ kbd{font:500 11px var(--mono);border:1px solid var(--line2);border-bottom-width:
     <div class="card moves" id="moves"><div class="mgrid" id="mgrid"></div></div>
     <div class="foot">
       <button class="btn" id="exportPgn">Export annotated PGN</button>
-      <button class="btn ghost" id="retry" hidden>Retry commentary</button>
+      <button class="btn ghost" id="retry" hidden>重新分析</button>
     </div>
   </aside>
 </main>
@@ -404,6 +420,29 @@ const API = (() => {
   if (q) return q.replace(/\/+$/, '');
   return location.protocol.startsWith('http') ? '' : 'http://127.0.0.1:8000';
 })();
+
+// A live socket tracks each page without background-tab timer throttling.
+let pageSocket = null, pageRetry = null, pageLeaving = false, pageTrackingDisabled = false;
+function connectPageLifetime() {
+  if (pageLeaving || pageTrackingDisabled || (pageSocket && pageSocket.readyState < 2)) return;
+  const url = new URL(API + '/api/page-lifetime', location.href);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  const socket = pageSocket = new WebSocket(url);
+  socket.onmessage = event => {
+    try { if (!JSON.parse(event.data).enabled) pageTrackingDisabled = true; } catch {}
+  };
+  socket.onclose = () => {
+    if (pageSocket === socket) pageSocket = null;
+    if (!pageLeaving && !pageTrackingDisabled) pageRetry = setTimeout(connectPageLifetime, 500);
+  };
+}
+window.addEventListener('pagehide', () => {
+  pageLeaving = true;
+  clearTimeout(pageRetry);
+  pageSocket?.close();
+});
+window.addEventListener('pageshow', () => { pageLeaving = false; connectPageLifetime(); });
+connectPageLifetime();
 
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -688,36 +727,58 @@ const N = () => S.game ? S.game.plies.length : 0;
 /* ---------------------------------------------------------- engine defaults */
 let engineDefaults = null;
 let engineSave = Promise.resolve();
-const engineControls = {threads: ['engineThreads','threadsValue'], hash_mb: ['engineHash','hashValue'], depth: ['engineDepth','depthValue']};
+let effortPolicies = [];
+const effortLevels = ['low','mid','high','xhigh','max','ultra'];
+const engineControls = {threads: ['engineThreads','threadsValue'], hash_mb: ['engineHash','hashValue'], depth: ['engineDepth','depthValue'], time_limit_s: ['engineTimeLimit','timeLimitValue'], effort: ['engineEffort','effortValue']};
 function paintEngineSetting(key) {
   const [id,out] = engineControls[key], slider = $('#' + id), value = +slider.value;
-  $('#' + out).textContent = key === 'hash_mb' ? `${+(value / 1024).toFixed(2)} GB` : value;
+  $('#' + out).textContent = key === 'hash_mb' ? `${+(value / 1024).toFixed(2)} GB` : key === 'effort' ? effortLevels[value] : key === 'time_limit_s' ? `${value.toFixed(1)} 秒` : value;
   slider.style.setProperty('--fill', `${(value-slider.min)/(slider.max-slider.min)*100}%`);
+  if (key === 'effort') paintEffortPolicy();
+}
+function paintEffortPolicy() {
+  const p = effortPolicies[+$('#engineEffort').value];
+  if (!p) return;
+  $('#effortDetails').textContent = `每局面时间上限：${p.max_time_s.toLocaleString(undefined,{maximumFractionDigits:2})} 秒，无节点上限。提前结束需 ≥${p.min_nodes.toLocaleString()} 节点、深度 ≥${p.min_depth}，最佳着法连续 ${p.stable_iterations} 个深度稳定，评分跨度 ≤${p.score_tolerance_cp} cp。`;
+}
+function paintEngineMode() {
+  const mode = $('#engineMode').value;
+  $('#effortGroup').hidden = mode !== 'adaptive';
+  $('#timeLimitGroup').hidden = mode !== 'stockfish';
+  $('#engineDepth').closest('label').hidden = mode !== 'manual';
+  paintEffortPolicy();
 }
 function applyEngineControls(data) {
+  effortPolicies = data.effort_policies;
   for (const key of Object.keys(engineControls)) {
     const slider = $('#' + engineControls[key][0]);
-    Object.assign(slider, data.limits[key]); slider.value = data.engine[key]; slider.disabled = false; paintEngineSetting(key);
+    Object.assign(slider, data.limits[key]); slider.value = key === 'effort' ? effortLevels.indexOf(data.engine.effort) : data.engine[key]; slider.disabled = false; paintEngineSetting(key);
   }
+  $('#engineMode').disabled = false;
+  $('#engineMode').value = data.engine.mode;
+  paintEngineMode();
 }
 const engineReady = fetch(API + '/api/settings/engine').then(async r => {
   if (!r.ok) throw new Error('无法读取引擎设置');
   const data = await r.json(); engineDefaults = data.engine; applyEngineControls(data);
 }).catch(e => { $('#engineSettingsState').textContent = e.message; });
+function saveEngineControls() {
+  const value = Object.fromEntries(Object.entries(engineControls).map(([k,[id]]) => [k,k === 'effort' ? effortLevels[+$('#' + id).value] : +$('#' + id).value]));
+  value.mode = $('#engineMode').value;
+  $('#engineSettingsState').textContent = '保存中…';
+  engineSave = engineSave.then(async () => {
+    const r = await fetch(API + '/api/settings/engine', {method:'PUT', headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});
+    if (!r.ok) throw new Error('保存失败，请重试');
+    const data = await r.json(); engineDefaults = data.engine;
+    $('#engineSettingsState').textContent = '已保存 · 下一盘生效';
+  }).catch(e => { $('#engineSettingsState').textContent = e.message; toast(e.message,true); });
+}
 for (const key of Object.keys(engineControls)) {
   const slider = $('#' + engineControls[key][0]);
   slider.oninput = () => paintEngineSetting(key);
-  slider.onchange = () => {
-    const value = Object.fromEntries(Object.entries(engineControls).map(([k,[id]]) => [k,+$('#' + id).value]));
-    $('#engineSettingsState').textContent = '保存中…';
-    engineSave = engineSave.then(async () => {
-      const r = await fetch(API + '/api/settings/engine', {method:'PUT', headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});
-      if (!r.ok) throw new Error('保存失败，请重试');
-      const data = await r.json(); engineDefaults = data.engine;
-      $('#engineSettingsState').textContent = '已保存 · 下一局生效';
-    }).catch(e => { $('#engineSettingsState').textContent = e.message; toast(e.message,true); });
-  };
+  slider.onchange = saveEngineControls;
 }
+$('#engineMode').onchange = () => { paintEngineMode(); saveEngineControls(); };
 function closeEngineSettings() { $('#engineSettingsPanel').hidden = true; $('#engineSettingsButton').setAttribute('aria-expanded','false'); }
 $('#engineSettingsButton').onclick = () => {
   const panel = $('#engineSettingsPanel'); panel.hidden = !panel.hidden;
@@ -799,7 +860,7 @@ function renderPicker(filter = '') {
 
 /* ---------------------------------------------------------------- game */
 async function startGame(raw) {
-  await engineReady; await engineSave;
+  await engineReady; await engineSave; await reviewReady; await reviewSave;
   const g = parseGame(raw);
   if (!g.plies.length) return toast(g.error || 'That game has no moves.', true);
   stopPlaying();
@@ -807,6 +868,7 @@ async function startGame(raw) {
   Object.assign(S, { game: g, ply: 0, ev: {}, cm: {}, meta: null, done: null, streamErr: null, streaming: false });
   S.engineSettings = engineDefaults ? {...engineDefaults} : null;
   S.engineOn = $('#optEngine').checked && !!S.backend;
+  S.deepseekDepth = reviewDefaults.deepseek_depth;
   S.factcheck = $('#optFact').checked;
   $('#landing').hidden = true; $('#viewer').hidden = false; $('#newGame').hidden = false;
   window.scrollTo(0, 0);
@@ -818,13 +880,22 @@ async function startGame(raw) {
 
 async function stream() {
   const g = S.game;
+  if (S.abort) S.abort.abort();
   const ctl = new AbortController(); S.abort = ctl;
+  const active = () => S.game === g && S.abort === ctl && !ctl.signal.aborted;
+  let terminal = false;
+  const consume = line => {
+    if (!line.trim() || !active()) return;
+    const event = JSON.parse(line);
+    if (event.type === 'done' || event.type === 'error') terminal = true;
+    onEvent(event);
+  };
   S.streaming = true; S.streamErr = null; S.done = null; $('#retry').hidden = true;
   renderGameHead();
   try {
     const r = await fetch(API + '/api/annotate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pgn: g.raw, factcheck: S.factcheck, engine: S.engineSettings }), signal: ctl.signal,
+      body: JSON.stringify({ pgn: g.raw, factcheck: S.factcheck, engine: S.engineSettings, deepseek_depth: S.deepseekDepth }), signal: ctl.signal,
     });
     if (!r.ok) {
       let msg = 'HTTP ' + r.status;
@@ -835,20 +906,26 @@ async function stream() {
     let buf = '';
     for (;;) {
       const { value, done } = await reader.read();
-      if (done) break;
+      if (done) { buf += dec.decode(); break; }
       buf += dec.decode(value, { stream: true });
       let k;
       while ((k = buf.indexOf('\n')) >= 0) {
         const line = buf.slice(0, k).trim(); buf = buf.slice(k + 1);
-        if (line && S.game === g) onEvent(JSON.parse(line));
+        consume(line);
       }
     }
-    if (buf.trim() && S.game === g) onEvent(JSON.parse(buf));
+    consume(buf);
+    if (active() && !terminal) throw new TypeError('Incomplete analysis stream');
   } catch (e) {
     if (e.name === 'AbortError') return;
-    if (S.game === g) { S.streamErr = e.message || String(e); $('#retry').hidden = false; }
+    if (active() && !terminal) {
+      S.streamErr = e instanceof TypeError || /input stream|network|fetch|connection/i.test(e.message || '')
+        ? '分析连接已中断，可能是服务重启或网络断开。已收到的结果仍可查看；请重新分析以完成整盘。'
+        : e.message || String(e);
+      $('#retry').hidden = false;
+    }
   } finally {
-    if (S.game === g) { S.streaming = false; renderGameHead(); renderPanel(); renderMoveMarks(); if (S.playing && S.waiting) tick(); }
+    if (active()) { S.streaming = false; S.abort = null; renderGameHead(); renderPanel(); renderMoveMarks(); if (S.playing && S.waiting) tick(); }
   }
 }
 
@@ -974,7 +1051,7 @@ function evalAt(ply) {
 }
 function fmtEval(v) {
   if (!v) return '–';
-  if (v.result) return v.result === '1/2-1/2' ? '和棋' : `${v.winner === 'white' ? '白方' : '黑方'}将杀 · ${v.result}`;
+  if (v.result) return v.result === '1/2-1/2' ? '和棋' : `${v.winner === 'white' ? 'White' : 'Black'} checkmate · ${v.result}`;
   if (v.tb) return v.tb.white_outcome === 0 ? '理论和棋' : (v.tb.white_outcome > 0 ? '白胜' : '黑胜');
   if (v.mate != null) return (v.mate > 0 ? '+' : '−') + 'M' + Math.abs(v.mate);
   if (v.cp == null) return '–';
@@ -1085,7 +1162,12 @@ function renderProgress() {
   $('#pgC').style.width = (n ? c / n * 100 : 0) + '%'; $('#pgCn').textContent = `${c}/${n}`;
   const st = $('#pgS');
   st.classList.toggle('err', !!S.streamErr);
-  if (S.streamErr) st.textContent = S.streamErr;
+  if (S.streamErr) {
+    st.textContent = S.streamErr + ' ';
+    const retry = document.createElement('button');
+    retry.className = 'btn ghost'; retry.textContent = '重新分析';
+    retry.disabled = S.streaming; retry.onclick = retryAnalysis; st.appendChild(retry);
+  }
   else if (S.done) st.textContent = 'Done.';
   else if (S.streaming) st.textContent = e < n ? 'Stockfish is analysing; comments arrive as each move is checked.' : 'Writing the remaining comments…';
   else st.textContent = '';
@@ -1167,13 +1249,21 @@ function renderPanel() {
     if (parts.length) facts = `<div class="facts"><div class="who">Stockfish 分析与规则程序提取</div>${parts.join('')}</div>`;
   }
   const pgnNags = p.nags.map(n => NAG[n]).filter(x => x && !/^[!?]+$/.test(x));
-  const anno = p.comment ? `<details class="anno"><summary class="who">棋谱原有注释 · 非本次生成（点击展开）</summary>${esc(p.comment).replace(/\n/g, '<br>')}</details>` : '';
+  const anno = p.comment ? `<p class="ctext anno instant">${esc(p.comment).replace(/\n/g, '<br>')}</p>` : '';
 
   el.innerHTML = `<div class="chead">
       <span class="mv"><small>${num}${white ? '.' : '…'}</small>${esc(p.san)}${gl.g ? `<span style="color:var(--qc)">${esc(gl.g)}</span>` : ''}${pgnNags.length ? ` <small>${esc(pgnNags.join(' '))}</small>` : ''}</span>
-      ${q ? `<span class="badge">${e?.is_checkmate ? '将杀' : (QUAL[q] || q)}</span>` : ''}
+      ${q ? `<span class="badge">${e?.is_checkmate ? 'Checkmate' : (QUAL[q] || q)}</span>` : ''}
       ${e ? `<span class="ev">${fmtEval({ cp: e.eval_before_cp, mate: e.mate_before, tb: e.tablebase?.before })} → <b>${fmtEval({ cp: e.eval_after_cp, mate: e.mate_after, result: e.result, winner: e.winner, tb: e.tablebase?.after })}</b></span>` : ''}
-    </div>${body}${facts}${anno}`;
+    </div>${body}${facts}${engineSearchStats(e)}${anno}`;
+}
+
+function engineSearchStats(e) {
+  const search = e?.engine_analysis?.after;
+  if (!search) return '';
+  const seconds = Number.isFinite(search.elapsed_s) && search.elapsed_s >= 0 ? `${search.elapsed_s.toFixed(3)}s` : '—';
+  const depth = Number.isInteger(search.depth) && search.depth >= 0 ? search.depth : '—';
+  return `<div class="search-stats" title="当前走棋后局面的 Stockfish 实际搜索耗时与完成深度；不含排队、残局库查询或生成讲解的时间">Stockfish · time: ${seconds} · depth: ${depth}</div>`;
 }
 
 /* ---------------------------------------------------------------- move list */
@@ -1325,7 +1415,12 @@ $('#tWait').onclick = e => { S.waitComments = !S.waitComments; e.currentTarget.c
 $('#tArrows').onclick = e => { S.arrows = !S.arrows; e.currentTarget.classList.toggle('on', S.arrows); renderArrows(); renderHighlights(); renderPanel(); };
 $('#tFlip').onclick = e => { S.flipped = !S.flipped; e.currentTarget.classList.toggle('on', S.flipped); buildSquares(); render(true); };
 $('#exportPgn').onclick = exportPgn;
-$('#retry').onclick = () => { S.ev = {}; S.cm = {}; S.engineOn = true; renderMoveMarks(); stream(); };
+function retryAnalysis() {
+  if (S.streaming) return;
+  S.ev = {}; S.cm = {}; S.engineOn = true;
+  renderMoveMarks(); renderPanel(); renderGraph(); stream();
+}
+$('#retry').onclick = retryAnalysis;
 
 const graph = $('#graph');
 graph.addEventListener('click', e => { stopPlaying(); go(graphPly(e)); });
@@ -1356,5 +1451,6 @@ document.addEventListener('keydown', e => {
 
 checkHealth();
 </script>
+<script src="/static/live.js"></script>
 </body>
 </html>

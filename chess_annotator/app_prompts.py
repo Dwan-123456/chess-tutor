@@ -99,6 +99,10 @@ def build_app_move_prompt(move: dict, history: list | None, insights: dict | Non
     record = json.loads(base_user.split("JSON):\n", 1)[1].split("\n\nRecent move history", 1)[0])
     for key in ("move_ideas", "position_context", "best_move_ideas", "opponent_reply_ideas"):
         record[key] = insights.get(key, [])
+    record["game_context"] = move.get("game_context")
+    record["fen_before"] = move["fen_before"]
+    record["fen_after"] = move["fen_after"]
+    record["pieces_before"] = _pieces(move["fen_before"])
     record["pieces_after"] = _pieces(move["fen_after"])
     tb = move.get('tablebase')
     if tb:

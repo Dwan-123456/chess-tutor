@@ -41,11 +41,15 @@ class Settings:
     llama_port: int = field(default_factory=lambda: _env("LLAMA_PORT", 8081, int))
     student_threads: int = field(default_factory=lambda: _env("STUDENT_THREADS", 0, int))  # 0 = llama.cpp default
     model: str = field(default_factory=lambda: _env("COMMENTATOR_MODEL", "openai/gpt-oss-120b"))
+    deepseek_depth: str = "instant"
     reasoning_effort: str = field(default_factory=lambda: _env("REASONING_EFFORT", "medium"))
     factcheck_default: bool = field(default_factory=lambda: _env("FACTCHECK_DEFAULT", True, bool))
     factcheck_model: str = field(default_factory=lambda: _env("FACTCHECK_MODEL", "openai/gpt-oss-120b"))
 
     stockfish_path: str = field(default_factory=lambda: _env("STOCKFISH_PATH", "stockfish"))
+    engine_mode: str = "adaptive"
+    engine_effort: str = "high"
+    engine_time_limit_s: float = 5.0
     engine_depth: int = field(default_factory=lambda: _env("ENGINE_DEPTH", 30, int))
     engine_threads: int = field(default_factory=lambda: _env("ENGINE_THREADS", 10, int))
     engine_hash_mb: int = field(default_factory=lambda: _env("ENGINE_HASH_MB", 8192, int))
@@ -57,8 +61,6 @@ class Settings:
     max_concurrent_games: int = field(default_factory=lambda: _env("MAX_CONCURRENT_GAMES", 1, int))
     queue_wait_s: float = field(default_factory=lambda: _env("QUEUE_WAIT_S", 30.0, float))
     llm_concurrency: int = field(default_factory=lambda: _env("LLM_CONCURRENCY", 6, int))
-    games_per_ip_per_hour: int = field(default_factory=lambda: _env("GAMES_PER_IP_PER_HOUR", 10, int))
-    trust_proxy_headers: bool = field(default_factory=lambda: _env("TRUST_PROXY_HEADERS", False, bool))
 
     daily_budget_usd: float = field(default_factory=lambda: _env("DAILY_BUDGET_USD", 2.0, float))
     price_in_per_m: float = field(default_factory=lambda: _env("PRICE_IN_PER_M", -1.0, float))
@@ -77,4 +79,4 @@ class Settings:
 
 
 # Bump when prompts/insights change so cached commentary from older versions isn't reused.
-PIPELINE_VERSION = "app-2-terminal-material"
+PIPELINE_VERSION = "app-3-full-game-context"

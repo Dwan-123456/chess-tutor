@@ -100,7 +100,7 @@ for Stockfish can help.
 newline-delimited JSON stream of events: `meta`, then `move` events (engine
 facts + insights, as soon as Stockfish finishes each move) and `comment`
 events (as each comment is written, possibly out of order), then `done`.
-Errors before streaming come back as HTTP 400/429/503 with `{"error": "..."}`.
+Errors before streaming come back as HTTP 400/503 with `{"error": "..."}`.
 
 `GET /api/health` shows the model and today's spend.
 
@@ -124,11 +124,21 @@ Errors before streaming come back as HTTP 400/429/503 with `{"error": "..."}`.
 | `MAX_PLIES` / `MAX_PGN_CHARS` | `200` / `30000` | reject longer games |
 | `MAX_CONCURRENT_GAMES` | `2` | games analysed at once (CPU bound) |
 | `LLM_CONCURRENCY` | `6` | commentary calls in flight across all games |
-| `GAMES_PER_IP_PER_HOUR` | `10` | per-visitor rate limit |
 | `DAILY_BUDGET_USD` | `2.0` | stop commentary for the day once spent |
 | `PRICE_IN_PER_M` / `PRICE_OUT_PER_M` | built-in table | override model prices (USD per million tokens) |
 | `DB_PATH` | `webapp_data.sqlite3` | cache of finished games + spend ledger |
-| `TRUST_PROXY_HEADERS` | `false` | use `X-Forwarded-For` for rate limiting (set `true` behind a proxy) |
 
 Finished games are cached by (moves, settings, pipeline version), so the same
 game requested twice costs nothing the second time.
+
+
+## Chess Tutor 1.0.2: live play and preferences
+
+- POST `/api/live/position`: `{ "moves": ["e2e4", "e7e5"] }`. Replays legal UCI moves from the standard start. Returns FEN, legal moves, SAN history, result, draw-claim availability and PGN. Illegal/post-terminal moves return 400. Promotion uses a q/r/b/n UCI suffix.
+- POST `/api/live/analyze`: moves plus `settings` (stockfish, deepseek, deepseek_depth, optional engine). Both flags default false. Returns current-position best move/PV and/or commentary; computes one position through the shared cancellable engine worker.
+- GET/PUT `/api/settings/tutor/{live|review}`: independent atomic settings in runtime/. Depth is instant/high/max; live preferences include an independent engine snapshot. PUT replaces the settings object.
+- POST `/api/annotate` additionally accepts deepseek_depth. Requests freeze it for the full review, and cache identity includes it.
+
+Live game/clock state stays in the page, with wall time for background tabs. Reload resets the game. PGN export preserves moves, not clock timestamps or live AI comments. No remote rooms.
+DeepSeek receives the full played mainline and exact piece locations. DS-only live mode omits engine suggestions and forbids next-move advice. high/max enable_thinking=true with the selected reasoning_effort; instant disables thinking.
+Provider reference: https://www.alibabacloud.com/help/en/model-studio/deepseek-api .

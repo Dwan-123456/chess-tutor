@@ -26,6 +26,7 @@ import chess.pgn
 from chess_annotator import app_prompts, positional, prompts
 
 from .config import PIPELINE_VERSION, Settings
+from .engine_effort import policy_dict, official_policy_dict
 from .history import History, rules_fingerprint, engine_fingerprint
 from .engine_scheduler import AnalysisCancelled
 from .cpu_scheduling import selected_policy
@@ -33,7 +34,7 @@ from .cpu_scheduling import selected_policy
 MOVE_FIELDS = ("ply", "move_number", "side", "san", "uci", "fen_before", "fen_after", "phase",
                "eval_before_cp", "eval_after_cp", "mate_before", "mate_after", "cp_loss",
                "quality_label", "nag_symbol", "is_best_move", "best_move_san",
-               "principal_variation_san", "captured_piece", "material_after", "tags", "is_checkmate", "winner", "result", "tablebase")
+               "principal_variation_san", "engine_analysis", "captured_piece", "material_after", "tags", "is_checkmate", "winner", "result", "tablebase")
 
 
 class PGNError(ValueError):
@@ -66,9 +67,12 @@ def analysis_signature(game: chess.pgn.Game, settings: Settings, factcheck: bool
     return {
         "fen": game.board().fen(),
         "moves": [m.uci() for m in game.mainline_moves()],
-        "v": PIPELINE_VERSION, "model": settings.model, "effort": settings.reasoning_effort,
+        "v": PIPELINE_VERSION, "model": settings.model, "effort": settings.reasoning_effort, "deepseek_depth": settings.deepseek_depth,
         "factcheck": factcheck, "fc_model": settings.factcheck_model if factcheck else None,
-        "depth": settings.engine_depth,
+        "depth": settings.engine_depth if settings.engine_mode == "manual" else None,
+        "engine_mode": settings.engine_mode,
+        "engine_policy": (policy_dict(settings.engine_effort) if settings.engine_mode == "adaptive" else
+                          official_policy_dict(settings.engine_time_limit_s) if settings.engine_mode == "stockfish" else None),
         "threads": settings.engine_threads, "hash_mb": settings.engine_hash_mb,
         "cpu_policy": selected_policy(settings),
         "tablebase": 'lichess-seven-wdl50-v1' if settings.tablebase_enabled else None,
@@ -114,7 +118,7 @@ class GamePipeline:
         billing = []
         try:
             async with self.llm_sem:
-                text, usage = await self.llm.chat(self.s.model, sys_p, user_p)
+                text, usage = await self.llm.chat(self.s.model, sys_p, user_p, **({"depth": self.s.deepseek_depth} if self.s.commentator_backend == "deepseek" else {}))
                 generation = usage.get("generation")
                 if usage.get("billing"):
                     billing.append(usage["billing"])
@@ -122,7 +126,7 @@ class GamePipeline:
                 if factcheck:
                     fsys, fuser = app_prompts.build_factcheck_prompt(user_p, text)
                     try:
-                        checked, usage2 = await self.llm.chat(self.s.factcheck_model, fsys, fuser)
+                        checked, usage2 = await self.llm.chat(self.s.factcheck_model, fsys, fuser, **({"depth": self.s.deepseek_depth} if self.s.commentator_backend == "deepseek" else {}))
                         cost += self.s.cost(self.s.factcheck_model, usage2)
                         if usage2.get("billing"):
                             billing.append(usage2["billing"])
@@ -160,6 +164,13 @@ class GamePipeline:
 
         yield {"type": "meta", "headers": headers, "plies": plies, "cached": False}
 
+        context_board = game.board()
+        full_history = []
+        for context_move in game.mainline_moves():
+            full_history.append({"san": context_board.san(context_move), "uci": context_move.uci()})
+            context_board.push(context_move)
+        initial_fen = game.board().fen()
+
         loop = asyncio.get_running_loop()
         q: asyncio.Queue = asyncio.Queue()
 
@@ -193,6 +204,7 @@ class GamePipeline:
                     except Exception:  # noqa: BLE001 -- a detector bug must not kill the game
                         insights = {"move_ideas": [], "position_context": [], "best_move_ideas": [],
                                     "opponent_reply_ideas": []}
+                    m["game_context"] = {"initial_fen": initial_fen, "moves": full_history[:m["ply"]], "current_fen": m["fen_after"]}
                     history = moves[-prompts.HISTORY_LEN:]
                     moves.append(m)
                     ev = _move_event(m, insights)

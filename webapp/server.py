@@ -13,12 +13,11 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
-import time
-from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import urlsplit
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -29,6 +28,11 @@ from .pipeline import GamePipeline, PGNError, parse_single_game, cache_key
 from .store import Store
 from . import engine_settings
 from .engine_scheduler import EngineScheduler
+from .page_lifetime import PageLifetime
+from . import tutor_settings
+from .live import router as live_router
+from dataclasses import replace
+from typing import Literal
 
 STATIC = Path(__file__).parent / "static"
 
@@ -37,24 +41,7 @@ class AnnotateRequest(BaseModel):
     pgn: str = Field(..., min_length=1)
     factcheck: bool | None = None
     engine: engine_settings.EngineSettings | None = None
-
-
-class RateLimiter:
-    """Sliding one-hour window of game starts per client IP (in memory)."""
-
-    def __init__(self, per_hour: int):
-        self.per_hour = per_hour
-        self.hits = defaultdict(deque)
-
-    def allow(self, ip: str) -> bool:
-        now = time.time()
-        dq = self.hits[ip]
-        while dq and now - dq[0] > 3600:
-            dq.popleft()
-        if len(dq) >= self.per_hour:
-            return False
-        dq.append(now)
-        return True
+    deepseek_depth: Literal['instant', 'high', 'max'] | None = None
 
 
 @asynccontextmanager
@@ -89,25 +76,55 @@ async def lifespan(app: FastAPI):
         app.state.llm = GroqClient(s.groq_api_key, s.reasoning_effort)
     app.state.llm_sem = asyncio.Semaphore(s.llm_concurrency)
     app.state.game_sem = asyncio.Semaphore(s.max_concurrent_games)
-    app.state.limiter = RateLimiter(s.games_per_ip_per_hour)
+    shutdown = getattr(app.state, 'desktop_shutdown', None)
+    app.state.page_lifetime = PageLifetime(shutdown) if shutdown else None
     try:
         yield
     finally:
+        if app.state.page_lifetime:
+            await app.state.page_lifetime.close()
         await asyncio.to_thread(app.state.engine_scheduler.close)
         if app.state.llm is not None:
             await app.state.llm.aclose()
         app.state.store.close()
 
 
-app = FastAPI(title="Chess commentary", lifespan=lifespan)
+app = FastAPI(title="Chess Tutor", version="1.0.2", lifespan=lifespan)
+app.include_router(live_router)
 
 
-def _client_ip(request: Request) -> str:
-    if request.app.state.settings.trust_proxy_headers:
-        fwd = request.headers.get("x-forwarded-for")
-        if fwd:
-            return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+@app.get('/api/settings/tutor/{mode}')
+async def get_tutor_settings(mode: Literal['live', 'review']):
+    return tutor_settings.load(mode).model_dump()
+
+
+@app.put('/api/settings/tutor/{mode}')
+async def put_tutor_settings(mode: Literal['live', 'review'], value: tutor_settings.TutorSettings):
+    tutor_settings.save(mode, value)
+    return value.model_dump()
+
+
+@app.websocket("/api/page-lifetime")
+async def page_lifetime(socket: WebSocket):
+    # Only the app's own origin may control the local desktop process.
+    origin = urlsplit(socket.headers.get('origin', ''))
+    if origin.scheme not in ('http', 'https') or origin.netloc != socket.headers.get('host'):
+        await socket.close(code=1008)
+        return
+    await socket.accept()
+    lifetime = socket.app.state.page_lifetime
+    await socket.send_json({'enabled': lifetime is not None})
+    if lifetime is None:
+        await socket.close()
+        return
+    page = lifetime.connect()
+    try:
+        while True:
+            await socket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        lifetime.disconnect(page)
 
 
 @app.get("/api/health")
@@ -136,12 +153,11 @@ async def annotate(req: AnnotateRequest, request: Request):
     st = request.app.state
     # Freeze the parameters before queueing, never mutate a running game's settings.
     s: Settings = (req.engine or st.engine_defaults).apply(st.settings)
+    s = replace(s, deepseek_depth=req.deepseek_depth or tutor_settings.load('review').deepseek_depth)
     try:
         game = parse_single_game(req.pgn, s)
     except PGNError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    if not st.limiter.allow(_client_ip(request)):
-        raise HTTPException(status_code=429, detail="Too many games from your address this hour. Please wait a bit.")
     try:
         await asyncio.wait_for(st.game_sem.acquire(), timeout=s.queue_wait_s)
     except asyncio.TimeoutError:

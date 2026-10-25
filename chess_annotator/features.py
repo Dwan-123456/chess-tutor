@@ -80,6 +80,7 @@ class MoveFeatures:
     missed_mate: bool = False
     tags: list = field(default_factory=list)  # lightweight heuristic tags
     captured_piece: Optional[str] = None  # e.g. "knight", "pawn" -- None if not a capture
+    engine_analysis: dict = field(default_factory=dict)
     engine_ok: bool = True  # False if the engine returned no evaluation for the position before or after
                             # this move; cp_loss / quality_label are then meaningless and callers should skip it
 
@@ -441,6 +442,7 @@ def _analyze_parsed_game(game: "chess.pgn.Game", analyser: _PositionAnalyser, ma
             tags.append("possible_fork")
 
         moves_out.append(asdict(MoveFeatures(
+            engine_analysis={"before": prev_info.get("search", {}), "after": info_after.get("search", {})},
             ply=ply,
             move_number=move_number,
             side="white" if side_white else "black",
@@ -478,6 +480,7 @@ def _analyze_parsed_game(game: "chess.pgn.Game", analyser: _PositionAnalyser, ma
             on_move(moves_out[-1])
 
         # roll forward for next iteration
+        prev_info = info_after
         cp_before, mate_before, best_before = cp_after, mate_after, best_after
 
     return {"headers": headers, "moves": moves_out}

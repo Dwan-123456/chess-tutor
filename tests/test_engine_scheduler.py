@@ -75,7 +75,7 @@ class FakeEngine:
 class SchedulerTests(unittest.TestCase):
     def test_cancel_reuse_serialization_and_settings(self):
         engine = FakeEngine(block=True)
-        settings = Settings(engine_threads=10, engine_hash_mb=8192, engine_depth=21)
+        settings = Settings(engine_mode='manual', engine_threads=10, engine_hash_mb=8192, engine_depth=21)
         scheduler = EngineScheduler()
         try:
             with patch('webapp.engine_scheduler.chess.engine.SimpleEngine.popen_uci', return_value=engine) as spawn:
@@ -86,7 +86,7 @@ class SchedulerTests(unittest.TestCase):
                     second = scheduler.submit(game(), settings, second_moves.append, threading.Event())
                     self.assertFalse(second.future.done())
                     # New parameters are applied by the owner only after stop is acknowledged.
-                    settings2 = Settings(engine_threads=2, engine_hash_mb=256, engine_depth=12)
+                    settings2 = Settings(engine_mode='manual', engine_threads=2, engine_hash_mb=256, engine_depth=12)
                     third = scheduler.submit(game(), settings2, lambda _: None, threading.Event())
                     third.stop()
                     self.assertTrue(third.future.cancelled())
@@ -116,10 +116,10 @@ class SchedulerTests(unittest.TestCase):
         try:
             with patch('webapp.engine_scheduler.chess.engine.SimpleEngine.popen_uci', side_effect=[broken, good]):
                 with patch('webapp.engine_scheduler.selected_policy', return_value='auto'):
-                    failed = scheduler.submit(game(), Settings(), lambda _: None, threading.Event())
+                    failed = scheduler.submit(game(), Settings(engine_mode='manual', ), lambda _: None, threading.Event())
                     with self.assertRaises(chess.engine.EngineTerminatedError):
                         failed.future.result(3)
-                    scheduler.submit(game(), Settings(), lambda _: None, threading.Event()).future.result(3)
+                    scheduler.submit(game(), Settings(engine_mode='manual', ), lambda _: None, threading.Event()).future.result(3)
                     self.assertTrue(broken.closed)
         finally:
             scheduler.close()
@@ -140,7 +140,7 @@ class SchedulerTests(unittest.TestCase):
         try:
             with patch('webapp.engine_scheduler.chess.engine.SimpleEngine.popen_uci', return_value=engine):
                 with patch('webapp.engine_scheduler.selected_policy', return_value='auto'):
-                    job = scheduler.submit(game(), Settings(), lambda _: self.fail('Partial result published'), threading.Event())
+                    job = scheduler.submit(game(), Settings(engine_mode='manual', ), lambda _: self.fail('Partial result published'), threading.Event())
                     self.assertTrue(starting.wait(3))
                     job.stop()
                     allow_attach.set()
@@ -161,7 +161,7 @@ class CpuPolicyTests(unittest.TestCase):
         self.assertEqual(physical_first_policy(topology, 3), 'auto')
         self.assertEqual(physical_first_policy([], 2), 'auto')
         self.assertEqual(physical_first_policy(topology[:2], 1), 'auto')
-        settings = Settings(engine_threads=2, engine_hash_mb=256)
+        settings = Settings(engine_mode='manual', engine_threads=2, engine_hash_mb=256)
         import json
         with tempfile.TemporaryDirectory() as folder:
             profile = Path(folder) / 'profile.json'

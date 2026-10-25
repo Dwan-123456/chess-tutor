@@ -72,17 +72,21 @@ class DeepSeekClient:
         if not api_key or not base_url.startswith("https://"):
             raise LLMError("DeepSeek API configuration is missing or invalid")
         self.url = base_url.rstrip("/") + "/chat/completions"
-        self._client = httpx.AsyncClient(timeout=90, headers={"Authorization": f"Bearer {api_key}"})
+        self._client = httpx.AsyncClient(timeout=300, headers={"Authorization": f"Bearer {api_key}"})
 
-    async def chat(self, model: str, system: str, user: str, max_tokens: int = 500) -> tuple:
+    async def chat(self, model: str, system: str, user: str, max_tokens: int = 500, *, depth: str = "instant") -> tuple:
+        if depth not in ("instant", "high", "max"):
+            raise ValueError("Invalid DeepSeek depth")
         payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": system + "\n请用简体中文简短讲解，保留 SAN 棋步记号。只依据提供的引擎事实，不编造战术或变化。若是事实检查任务，保留 NO_CHANGES 标记。"},
+                {"role": "system", "content": system + "\n请用简体中文简短讲解，保留 SAN 棋步记号。只依据提供的可验证事实，不编造战术或变化。若是事实检查任务，保留 NO_CHANGES 标记。"},
                 {"role": "user", "content": user},
             ],
-            "temperature": 0.2, "max_tokens": max_tokens, "enable_thinking": False,
+            "temperature": 0.2, "max_tokens": max_tokens if depth == "instant" else 32768, "enable_thinking": depth != "instant",
         }
+        if depth != "instant":
+            payload["reasoning_effort"] = depth
         for attempt in range(3):
             from datetime import datetime, timezone
             requested_at = datetime.now(timezone.utc)
@@ -110,7 +114,7 @@ class DeepSeekClient:
             usage["billing"] = estimate(usage, requested_at)
             usage["generation"] = {
                 "provider": "deepseek", "model": data.get("model") or model,
-                "requested_model": model, "request_id": data.get("id"),
+                "depth": depth, "requested_model": model, "request_id": data.get("id"),
                 "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             }
             return text, usage

@@ -1,128 +1,85 @@
-# Chess Annotator
+# Chess Tutor
 
-Load a chess game, watch it play out on the board, and read a short commentary on every move as it happens.
+**Replay games. Play together. Understand every move.**
 
-![Chess Annotator demo](docs/demo.gif)
+A local chess learning app for **PGN review and live, same-computer games with optional Chinese commentary**. Stockfish calculates variations; DeepSeek explains verified board facts. Basic live play needs neither a PGN nor an AI service.
 
-The commentary comes from a small language model (Qwen2.5-1.5B) that I trained for this job. It never works out the chess on its own. Stockfish and some board analysis code decide the facts for each move: the evaluation before and after, the best alternative, the likely reply, and ideas such as pins, forks, open files or pawn structure. The model only turns those facts into a few readable sentences. That keeps it small enough to run on an ordinary laptop CPU with no GPU and no API costs.
+## Features
 
-## What you can do with it
+- **Review:** import PGN, browse multi-game files, step through positions, view evaluations, read streamed commentary and export annotated PGN.
+- **Live:** two people share one computer and page. Drag pieces or click starting/destination squares. Legal moves, castling, en passant, promotion and endings use python-chess rules.
+- **Chess clock:** choose time and increment, start/pause/resume, stop at game end or timeout. Returning to review pauses play. Export PGN before refreshing or starting another game.
+- **Persistent preferences:** live SF Effort and DS depth are independent from review settings. Live parameters apply next move; review parameters apply next loaded game. Switches apply immediately. The retry button explicitly analyzes with current live settings.
+- **Full commentary context:** all moves played so far, initial/current FEN, exact piece locations and program-generated position analysis. Review does not expose future PGN moves ahead of the current move.
+- **Local review history:** reuse successful DeepSeek reviews when the game, prompts, engine and settings match. Thinking depth is part of cache identity.
 
-* Drop in a PGN file or paste one. Files with many games give you a searchable list to pick from.
-* Step through the game with the arrow keys, or press Space to play it. Playback waits for each comment to arrive, so the text always matches the position on the board.
-* See the evaluation bar, a graph of the evaluation over the whole game (click it to jump to a move), and the engine's preferred move drawn as a dashed arrow whenever the played move wasn't the best one.
-* Any comments or arrows already in your PGN are shown next to the generated commentary.
-* Export the game as a PGN with all the commentary and evaluations included.
+## Live assistance
 
-## Running it
+| Stockfish | DeepSeek | Output |
+|---|---|---|
+| Off | Off | Board, moves, clock; no engine/model calls |
+| On | Off | Current side’s best move and principal variation |
+| Off | On | Position/last-move commentary; prompt forbids next-move suggestions and numerical evaluation |
+| On | On | Stockfish best move with DeepSeek explanation |
 
-You need Python 3.10 or newer, a Stockfish binary and the model file.
+Both switches default off on fresh installations; saved choices are restored later.
+**instant** disables DeepSeek thinking; **high/max** enable the corresponding provider reasoning effort. See the [Alibaba Cloud reference](https://www.alibabacloud.com/help/en/model-studio/deepseek-api). Thinking can take longer and use more tokens. Analysis does not block moves or the clock.
 
-**1. Install the Python packages**
+Live state stays in the page: refreshing resets the game, while server preferences persist. The clock counts elapsed wall time in background tabs. Pause disables moves. This release supports same-computer play, without remote multiplayer rooms.
 
-```bash
-pip install -r requirements.txt -r requirements-app.txt
+## Quick start
+
+Python 3.10+:
+
+```powershell
+python -m venv .venv
+.venv/Scripts/python.exe -m pip install -r requirements.txt -r requirements-app.txt
 ```
 
-**2. Get Stockfish**
+Download [Stockfish](https://stockfishchess.org/download/) for analysis. Put the Windows executable at `stockfish/stockfish/stockfish-windows-x86-64-universal.exe` or set `STOCKFISH_PATH` to its full path.
 
-Download it from [stockfishchess.org](https://stockfishchess.org/download/) (on Linux, `apt install stockfish` also works) and note where the binary is.
+For AI commentary, copy [.env.example](.env.example) to `.env`, configure `DEEPSEEK_API_KEY`, HTTPS `DEEPSEEK_BASE_URL`, `COMMENTATOR_BACKEND=deepseek` and the model. The Windows launcher can instead read the single Alibaba Cloud `*apiKey*.csv` in the project root. Credentials stay on the server and are excluded from Git.
 
-**3. Get llama.cpp**
+**Windows desktop:**
 
-The model runs through `llama-server` from [llama.cpp](https://github.com/ggml-org/llama.cpp). Download a prebuilt release for your system from the [releases page](https://github.com/ggml-org/llama.cpp/releases). On Windows, take the file ending in `bin-win-cpu-x64.zip` and unzip it anywhere.
-
-**4. Get the model**
-
-Download `student-v3-q8_0.gguf` (1.6 GB) from [Hugging Face](https://huggingface.co/shashank-v-98/chess-annotator-qwen2.5-1.5b-gguf) and put it in this folder. You can also build it yourself from the LoRA adapter; see "Rebuilding the model file" below.
-
-**5. Start the app**
-
-```bash
-export COMMENTATOR_BACKEND=student_gguf
-export STUDENT_GGUF=student-v3-q8_0.gguf
-export LLAMA_SERVER=/path/to/llama-server          # llama-server.exe on Windows
-export STOCKFISH_PATH=/path/to/stockfish
-python -m uvicorn webapp.server:app --port 8000
+```powershell
+.venv/Scripts/python.exe launch.py
 ```
 
-Open http://127.0.0.1:8000. The app starts `llama-server` on its own and shuts it down when you stop the app.
+Opens `http://127.0.0.1:8765`, restarts only this checkout’s previous service and closes its service/engine after the final page disconnects. No model configuration means engine-only review. This launcher requires Stockfish.
 
-On a laptop CPU, expect about 16 seconds per comment. Stockfish analyses the whole game in the background while the comments are written one at a time in move order, and finished games are cached, so opening the same game again is instant.
+**Development / other platforms:**
 
-To try the interface without the model, set `COMMENTATOR_BACKEND=mock`. It still runs Stockfish but fills in placeholder comments.
-
-Every setting (engine depth, ports, threads, rate limits and so on) is listed in [webapp/README.md](webapp/README.md).
-
-## How the model was trained
-
-The goal was a small model that writes like a good annotator while only saying things the engine actually supports. I trained it by distillation: a large model wrote example commentary from verified facts, and the small model learned to copy it.
-
-**Games.** Real games from Chess.com's public API (`distill/fetch_chesscom_games.py`): my own games plus games from eleven strong online players, so the data covers everything from club level play to grandmaster games.
-
-**Facts.** Each game goes through Stockfish at depth 14. `chess_annotator/features.py` records the evaluations, the best move and the expected line for every move, and `chess_annotator/positional.py` finds the human ideas: pins, forks, open files, weak pawns, the type of endgame and so on.
-
-**Teacher labels.** `distill/generate_app_dataset.py` picks which moves to label (every mistake and blunder, moves with a notable idea, and a sample of the rest) and asks gpt-oss-120b to comment on each one using only the facts. A second pass with the same model checks each comment against the facts and fixes anything that doesn't match. This produced 16,384 labelled moves for $25.94.
-
-**Filtering.** `distill/consistency.py` is a rule checker that compares every comment with its facts: the size and direction of the advantage, which side is better, captures and checks that really happened, tactics that really exist, and pieces on the squares they really stand on. The 7.1% of labels that failed were dropped, leaving 15,217.
-
-**Splits.** `distill/build_v3_split.py` splits the data by game, so no game appears in more than one split: 13,001 moves for training, 1,071 for validation and 1,145 for testing.
-
-**Training.** `distill/train_v3_on_kaggle.ipynb` trains a LoRA adapter on Qwen2.5-1.5B-Instruct on a single Kaggle T4 GPU:
-
-| Setting | Value |
-|---|---|
-| LoRA rank / alpha / dropout | 32 / 64 / 0.05 |
-| Target modules | all attention and MLP projections |
-| Epochs | 2 |
-| Learning rate | 1e-4, cosine schedule, 3% warmup |
-| Effective batch size | 16 (2 × 8 gradient accumulation) |
-| Max sequence length | 1024 tokens |
-
-Validation loss went from 0.899 to 0.772 over the run.
-
-![Training and validation loss](results/v3_loss_curve.png)
-
-**Results on the 1,145 test moves** (full outputs in [results/v3_test_outputs.json](results/v3_test_outputs.json)):
-
-* 96.7% of the model's comments passed the consistency checker.
-* On all 193 test moves that were mistakes or blunders, it named the engine's best move.
-* No empty or cut off comments, and comment length is about the same as the teacher's.
-
-The checker is strict about what it flags but can't catch everything, so the true error rate is somewhat higher than 3.3%.
-
-## Rebuilding the model file
-
-The app runs the model as an 8 bit GGUF file through llama.cpp. To build that file from the LoRA adapter:
-
-```bash
-# merge the adapter into the base model
-python -m distill.export_student_gguf --adapter path/to/chess-annotator-lora-v3
-
-# convert with the script from a llama.cpp checkout
-git clone --depth 1 https://github.com/ggml-org/llama.cpp
-pip install sentencepiece protobuf
-python llama.cpp/convert_hf_to_gguf.py student-v3-merged --outtype q8_0 --outfile student-v3-q8_0.gguf
+```powershell
+$env:COMMENTATOR_BACKEND="disabled"
+$env:STOCKFISH_PATH="C:/path/to/stockfish.exe"
+.venv/Scripts/python.exe -m uvicorn webapp.server:app --host 127.0.0.1 --port 8000
 ```
 
-To confirm the conversion didn't hurt quality, start `llama-server` with the new file on port 8081 and run:
+Open `http://127.0.0.1:8000`. POSIX shells use `export NAME=value` and `.venv/bin/python`. Direct uvicorn reads environment variables; use `--env-file .env` to load a file. Development mode stays running after pages close. Basic live play works without Stockfish or DeepSeek in this mode.
 
-```bash
-python -m distill.eval_gguf --n 150
+## Settings and data
+
+- Review **Setting** panel: engine modes/resources and DeepSeek depth. Running games and retries keep the original snapshot.
+- Live **实时辅助**: switches, SF `low/mid/high/xhigh/max/ultra`, DS `instant/high/max`. Never plays a move for either player.
+- `runtime/engine-settings.json`: review engine; `runtime/review-settings.json` and `runtime/live-settings.json`: independent preferences.
+- `history/`: local review records and seven-piece tablebase cache. Live commentary is not saved as review history.
+- Stockfish shares one reusable worker; old search results cannot replace newer live positions.
+- Lichess seven-piece Syzygy is available for review (`TABLEBASE_ENABLED=false` disables it). Live analysis uses local Stockfish only.
+- Commentary sends the played mainline and board positions to your configured provider. Displayed CNY costs and daily USD budget are estimates; the provider’s bill is authoritative.
+
+Bind to `127.0.0.1` for same-computer use. There is no account system for public hosting.
+See [setup](LOCAL_SETUP.md), [backend documentation](webapp/README.md) and [release notes](CHANGELOG.md).
+
+## Checks
+
+```powershell
+.venv/Scripts/python.exe -m unittest discover -s tests -v
+node tests/test_stream.cjs
+node tests/test_time_mode.cjs
+node tests/test_live_clock.cjs
 ```
 
-On a sample of 150 test moves, the 8 bit model passed the checker on 98.0% of comments, against 98.7% for the original model on the same moves ([results/v3_gguf_q8_eval.json](results/v3_gguf_q8_eval.json)).
+## Credits and license
 
-## Project layout
-
-```
-chess_annotator/   engine analysis, positional ideas, prompts
-distill/           data collection, labelling, filtering, training notebook, export and evaluation
-webapp/            FastAPI server and the browser app (webapp/static/index.html)
-examples/          sample games and example model output
-results/           loss curve, test set outputs, GGUF evaluation
-```
-
-## License
-
-MIT. Qwen2.5-1.5B-Instruct is released under Apache 2.0. Stockfish is GPL and isn't included here; you download it separately.
+Based on [shashank-v-98/chess-annotator](https://github.com/shashank-v-98/chess-annotator), retaining the original [MIT license](LICENSE). Upstream training scripts and optional student backends remain in source, but are not required for live play/DeepSeek. [Stockfish](https://github.com/official-stockfish/Stockfish) is GPL-licensed and its executable is not included in this source release.

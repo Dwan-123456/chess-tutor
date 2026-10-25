@@ -1,15 +1,18 @@
 """One reusable Stockfish process, owned by one worker, with interruptible searches."""
 from __future__ import annotations
 
+from types import SimpleNamespace
 import logging
 import subprocess
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import chess.engine
 
 from chess_annotator import features
 from .cpu_scheduling import selected_policy
+from .engine_effort import policy_for, POLICY_VERSION, OFFICIAL_POLICY_VERSION, StabilityTracker
 from .tablebase import OnlineTablebase
 
 log = logging.getLogger(__name__)
@@ -53,28 +56,77 @@ class EngineJob:
 
 
 class _Analyser(features._PositionAnalyser):
-    def __init__(self, engine, depth, job):
+    def __init__(self, engine, depth, job, settings=None):
         self.engine, self.depth, self.job = engine, depth, job
+        self.mode = settings.engine_mode if settings else "manual"
+        self.policy = policy_for(settings.engine_effort) if settings and self.mode == "adaptive" else None
+        if self.mode == "stockfish":
+            self.policy = SimpleNamespace(max_time_s=settings.engine_time_limit_s)
         # python-chess sends ucinewgame once per job, retaining Hash between its plies.
         self.game = object()
 
     def analyse(self, board):
         self.job.check()
-        with self.engine.analysis(board, chess.engine.Limit(depth=self.depth),
-                                  game=self.game, multipv=1,
-                                  info=chess.engine.INFO_SCORE | chess.engine.INFO_PV) as search:
+        if board.is_game_over():
+            return {'cp': None if board.is_checkmate() else 0,
+                    'mate': 0 if board.is_checkmate() else None,
+                    'best_move': None, 'pv': [],
+                    'search': {'mode': 'terminal', 'stop_reason': 'terminal',
+                               'depth': 0, 'nodes': 0, 'elapsed_s': 0.0}}
+        policy = self.policy
+        limit = (chess.engine.Limit(time=policy.max_time_s)
+                 if policy else chess.engine.Limit(depth=self.depth))
+        if self.mode == "stockfish":
+            # One synthetic clock period per position enables native time management.
+            # movetime independently caps the search; no external stability heuristic.
+            limit = chess.engine.Limit(time=policy.max_time_s,
+                                       white_clock=policy.max_time_s,
+                                       black_clock=policy.max_time_s,
+                                       remaining_moves=1)
+        reason = 'stockfish' if self.mode == 'stockfish' else ('budget' if policy else 'depth')
+        started = time.monotonic()
+        with self.engine.analysis(board, limit, game=self.game, multipv=1,
+                                  info=chess.engine.INFO_ALL) as search:
             self.job.attach(search)
             try:
+                last_exact = None
+                if policy:
+                    tracker = StabilityTracker(policy) if self.mode == "adaptive" else None
+                    for update in search:
+                        self.job.check()
+                        if ('score' in update and update.get('pv') and 'depth' in update
+                                and not update.get('lowerbound') and not update.get('upperbound')):
+                            last_exact = dict(update)
+                        if tracker is not None and tracker.update(update):
+                            reason = 'stable'
+                            search.stop()
+                            break
                 search.wait()
-                self.job.check()  # Never publish an interrupted, shallower result.
-                info = search.info
+                self.job.check()  # Cancellation never publishes a partial result.
+                info = dict(search.info)
+                # stop may interrupt the next aspiration search. Keep the last exact
+                # score/PV together, rather than publishing its bound as a final score.
+                if last_exact is not None:
+                    actual_nodes = info.get('nodes')
+                    info = last_exact
+                    if actual_nodes is not None:
+                        info['nodes'] = actual_nodes
             finally:
                 self.job.detach()
         score = info['score'].white()
         pv = info.get('pv', [])
+        metadata = {'mode': self.mode,
+                    'stop_reason': reason, 'depth': info.get('depth'),
+                    'nodes': info.get('nodes'), 'elapsed_s': round(time.monotonic()-started, 4),
+                    'score_bound': bool(info.get('lowerbound') or info.get('upperbound'))}
+        if policy:
+            metadata.update(policy=OFFICIAL_POLICY_VERSION if self.mode == "stockfish" else POLICY_VERSION,
+                            max_time_s=policy.max_time_s)
+            if self.mode == "adaptive":
+                metadata["effort"] = policy.effort
         return {'cp': None if score.is_mate() else score.score(),
                 'mate': score.mate() if score.is_mate() else None,
-                'best_move': pv[0] if pv else None, 'pv': pv[:4]}
+                'best_move': pv[0] if pv else None, 'pv': pv[:4], 'search': metadata}
 
 
 class EngineScheduler:
@@ -102,6 +154,27 @@ class EngineScheduler:
     def _forget(self, job):
         with self._lock:
             self._jobs.discard(job)
+
+    def submit_position(self, board, settings, cancel):
+        job = EngineJob(cancel)
+        with self._lock:
+            if self._closed:
+                raise RuntimeError('Engine scheduler is closed')
+            self._jobs.add(job)
+            job.future = self._pool.submit(self._run_position, board.copy(), settings, job)
+        job.future.add_done_callback(lambda _: self._forget(job))
+        return job
+
+    def _run_position(self, board, settings, job):
+        try:
+            job.check()
+            engine = self._prepare(settings)
+            return _Analyser(engine, settings.engine_depth, job, settings).analyse(board)
+        except AnalysisCancelled:
+            raise
+        except BaseException:
+            self._discard_engine()
+            raise
 
     def _discard_engine(self):
         if self._engine is not None:
@@ -153,7 +226,7 @@ class EngineScheduler:
                 on_move(move)
 
             return features._analyze_parsed_game(
-                game, _Analyser(engine, settings.engine_depth, job),
+                game, _Analyser(engine, settings.engine_depth, job, settings),
                 settings.max_plies, on_move=publish)
         except AnalysisCancelled:
             raise
