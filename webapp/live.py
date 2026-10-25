@@ -107,6 +107,15 @@ async def analyze(req: AnalysisRequest, request: Request):
                     system += ' Stockfish 给出的是当前行棋方的最佳着法及后续变化，请解释最佳着法，区分已走棋步和建议。评估为白方视角。'
                 else:
                     system += ' 未启用引擎。严格禁止给出任何下一步建议、候选着法、变化、最佳着法或数值评估；只评论已发生的棋步与可验证局面特征。'
+                    system += (
+                        ' 输出只要一段正文，最多3句、120个汉字，不用标题、列表、Markdown或开场白。'
+                        ' 优先解释刚走这一步造成的1至2个关键变化：具体影响了什么，以及为什么重要；'
+                        '只有与这一步直接相关时才提到上一手或既有局面。'
+                        ' 棋子位置和完整棋谱仅供理解，不要逐项罗列，不要把“b4”复述成“把b兵推进到b4”这类记谱翻译。'
+                        ' 禁止“根据给定事实”“当前局面”“刚走的棋”“局面很不寻常”“双方需要谨慎”等套话和空泛评价。'
+                        ' 不重复同一事实，不为凑篇幅补充无关的王后位置、未易位状态或子力清单。'
+                        ' 没有明显战术时只说能确认的实际变化，可以只写一句；不要编造攻击、威胁或得失。'
+                    )
                 text, usage = await st.llm.chat(s.model, system, json.dumps(facts, ensure_ascii=False), depth=options.deepseek_depth)
                 st.store.add_spend(s.cost(s.model, usage))
                 output.update(comment=text, generation=usage.get('generation'), billing=usage.get('billing'))
