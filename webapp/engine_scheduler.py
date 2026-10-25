@@ -176,6 +176,39 @@ class EngineScheduler:
             self._discard_engine()
             raise
 
+    def submit_explanation(self, board, settings, cancel):
+        job = EngineJob(cancel)
+        with self._lock:
+            if self._closed:
+                raise RuntimeError('Engine scheduler is closed')
+            self._jobs.add(job)
+            job.future = self._pool.submit(self._run_explanation, board.copy(), settings, job)
+        job.future.add_done_callback(lambda _: self._forget(job))
+        return job
+
+    def _run_explanation(self, board, settings, job):
+        from dataclasses import replace
+        from pathlib import Path
+        from .search_trace import analyze_search
+        path = settings.trace_stockfish_path
+        traced = replace(settings, stockfish_path=path if Path(path).is_file() else settings.stockfish_path,
+                         engine_threads=1)
+        try:
+            job.check()
+            engine = self._prepare(traced)
+            report = analyze_search(engine, board, traced, job)
+            from .history import engine_fingerprint
+            report['engine_sha256'] = engine_fingerprint(traced.stockfish_path)
+            report['resource_settings'] = {'threads':1, 'hash_mb':traced.engine_hash_mb,
+                                           'mode':traced.engine_mode,'effort':traced.engine_effort,
+                                           'depth_cap':traced.engine_depth if traced.engine_mode=='manual' else None}
+            return report
+        except AnalysisCancelled:
+            raise
+        except BaseException:
+            self._discard_engine()
+            raise
+
     def _discard_engine(self):
         if self._engine is not None:
             self._engine.close()

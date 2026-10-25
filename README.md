@@ -60,6 +60,11 @@ Open `http://127.0.0.1:8000`. POSIX shells use `export NAME=value` and `.venv/bi
 
 ## Settings and data
 
+**Explain Search** in live play runs an experimental, recorded Stockfish search.
+It dynamically explains 1–3 candidates and exposes per-depth scores and sampled
+internal cutoff events. DeepSeek is optional. See the [experiment and build
+instructions](engine_trace/README.md) for coverage and limitations.
+
 - Review **Setting** panel: engine modes/resources and DeepSeek depth. Running games and retries keep the original snapshot.
 - Live **实时辅助**: switches, SF `low/mid/high/xhigh/max/ultra`, DS `instant/high/max`. Never plays a move for either player.
 - `runtime/engine-settings.json`: review engine; `runtime/review-settings.json` and `runtime/live-settings.json`: independent preferences.

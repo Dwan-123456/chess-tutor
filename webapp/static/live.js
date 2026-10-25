@@ -28,6 +28,7 @@ document.head.insertAdjacentHTML('beforeend', `<style>
 .live-card h2{font:22px var(--serif);margin:0 0 14px}.live-card select,.live-card input[type=number]{padding:7px;color:var(--text);background:var(--surface3);border:1px solid var(--line2);border-radius:6px;max-width:100%}
 .live-card label{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0}.live-card input[type=checkbox]{accent-color:var(--accent);width:20px;height:20px}
 #liveMoves{font:14px/1.9 var(--mono);max-height:220px;overflow:auto;white-space:pre-wrap}#liveComment{white-space:pre-wrap;overflow-wrap:anywhere}
+#liveTrace table{width:100%;border-collapse:collapse;font:12px var(--mono)}#liveTrace td,#liveTrace th{padding:7px;text-align:left;border-bottom:1px solid var(--line)}#liveTrace summary{cursor:pointer;color:var(--muted)}#liveTrace .trace-line{font:12px/1.8 var(--mono);overflow-wrap:anywhere}#liveTrace h3{font-size:15px;margin:18px 0 6px}
 #liveBest{color:var(--accent);overflow-wrap:anywhere}#liveStatus{min-height:24px;margin-top:12px;color:var(--accent)}
 .live-ghost{position:fixed;width:70px;height:70px;z-index:100;pointer-events:none;filter:drop-shadow(0 8px 8px #0009)}
 @media(max-width:800px){#live{grid-template-columns:1fr;padding:0 14px;gap:16px}}
@@ -49,8 +50,9 @@ $('#viewer').insertAdjacentHTML('afterend', `<main id="live" hidden>
  <label>Stockfish Effort<select id="liveEffort">${['low','mid','high','xhigh','max','ultra'].map(v=>`<option>${v}</option>`).join('')}</select></label>
  <label>DeepSeek 思考深度<select id="liveDepth"><option>instant</option><option>high</option><option>max</option></select></label>
  <p class="note" id="liveSettingsStatus">自动保存 · 参数调整从下一步生效；开关即时生效。</p>
- <button class="btn" id="liveRetry">重新分析当前局面</button>
+ <div class="row"><button class="btn" id="liveRetry">重新分析当前局面</button><button class="btn" id="liveExplain" title="动态解释1至3个主要候选，需要开启Stockfish">Explain Search</button></div>
  <p id="liveBest"></p><p id="liveComment" aria-live="polite">辅助默认关闭，可在对局中开启。</p></div>
+ <div class="live-card" id="liveTrace" hidden></div>
  <div class="live-card"><h2>棋步</h2><div id="liveMoves"></div></div></aside>
 </main>
 <dialog id="livePromotion"><form method="dialog"><p>选择升变棋子</p>${[['q','后'],['r','车'],['b','象'],['n','马']].map(([v,t])=>`<button class="btn" value="${v}">${t}</button>`).join('')}<button class="btn" value="">取消</button></form></dialog>`);
@@ -85,6 +87,7 @@ function settleClock(now=Date.now()) {
 }
 function clockText(ms) {const sec=Math.ceil(ms/1000);return `${Math.floor(sec/60).toString().padStart(2,'0')}:${(sec%60).toString().padStart(2,'0')}`;}
 function paintClock() {
+  $('#liveExplain').disabled=!L.options.stockfish || !L.position;
   for(const side of ['white','black']) {
     const box=$('#'+side+'Clock'); $('output',box).textContent=clockText(L.time[side]);
     box.classList.toggle('active',L.running && L.position?.turn===side && !L.ended);
@@ -107,15 +110,36 @@ function paintLive() {
   paintClock();
 }
 function cancelLiveAnalysis() {L.serial++;L.ctl?.abort();L.ctl=null;}
-async function analyzeLive() {
+function searchScore(score) {
+  if(score.mate!=null)return score.mate>0?`将杀 ${score.mate}`:`被将杀 ${Math.abs(score.mate)}`;
+  return `${score.cp>=0?'+':''}${(score.cp/100).toFixed(2)}`;
+}
+function renderSearchTrace(trace) {
+  const box=$('#liveTrace');box.hidden=false;
+  if(!trace.candidates?.length){box.textContent=trace.error||'暂无完整搜索记录';return;}
+  const reasons={only_legal_move:'仅有一种合法着法',clear_stable_lead:'首选优势明显且排名稳定，简要解释',close_candidates:'主要候选接近，展开比较',ranking_unstable:'搜索排名仍有变化，展开比较',stopped_during_iteration:'停止时首选发生变化，以下保留最后完整层的候选比较，优劣尚未确定'};
+  const names={root_probe:'根节点候选搜索',beta_cutoff:'达到搜索阈值后停止分支',tt_cutoff:'复用已存搜索结果',null_cutoff:'空着试探触发剪枝',futility_cutoff:'静态界限触发剪枝'};
+  const rows=trace.candidates.map(c=>`<section><h3>${c.rank}. ${esc(c.san)} · ${esc(searchScore(c.score_for_turn))}${c.bound==='exact'?'':'（评分界限）'}</h3><div class="trace-line">${esc(c.pv.join(' '))}</div></section>`).join('');
+  const history=trace.iterations.slice(-12).map(i=>`<tr><td>${i.depth}</td><td>${i.candidates.map(c=>`${esc(c.san)} ${esc(searchScore(c.score_for_turn))}${c.bound==='exact'?'':' 界限'}`).join(' / ')}</td></tr>`).join('');
+  const cutoffs=(trace.events||[]).filter(e=>e.kind!=='root_probe').slice(-6).map(e=>`<p>${esc(names[e.kind]||e.kind)} · 深度 ${e.iteration}<br><span class="trace-line">${esc(e.path_san.join(' '))}${e.move_san?' → '+esc(e.move_san):''}</span></p>`).join('');
+  box.innerHTML=`<h2>搜索解释 · 实验版</h2><p>${esc(reasons[trace.selection_reason]||'候选比较')}</p><p class="note">本次解释 ${trace.candidate_count} 种 · 完成深度 ${trace.depth} · ${trace.elapsed_s} 秒 · 评分为当前行棋方视角</p>${rows}
+    <details><summary>查看搜索记录</summary><p class="note">${trace.source==='native'?'来自本机记录版 Stockfish 的搜索事件。':'当前引擎仅提供公开搜索输出，未记录内部剪枝。'}</p><table><thead><tr><th>深度</th><th>候选评分记录</th></tr></thead><tbody>${history}</tbody></table>${cutoffs||'<p class="note">本次没有可展示的剪枝采样。</p>'}<p class="note">剪枝是缩减搜索的方法，不代表该候选一定差。仅采样浅层主搜索，不含完整搜索树或神经网络归因。</p><button class="btn" id="downloadSearch">导出搜索记录</button></details>`;
+  $('#downloadSearch').onclick=()=>{
+    const url=URL.createObjectURL(new Blob([JSON.stringify(trace,null,2)],{type:'application/json'}));
+    const link=document.createElement('a');link.href=url;link.download='chess-tutor-search.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  };
+}
+async function analyzeLive(explain=false) {
+  $('#liveTrace').hidden=true; L.trace=null;
   cancelLiveAnalysis(); $('#liveBest').textContent='';
   const options=structuredClone(L.options);
   if(!options.stockfish && !options.deepseek){$('#liveComment').textContent='辅助已关闭。';return;}
   const serial=L.serial,ctl=L.ctl=new AbortController();
   $('#liveComment').textContent='正在分析当前局面…';
   try {
-    const result=await livePost('/api/live/analyze',{moves:[...L.moves],settings:options},ctl.signal);
+    const result=await livePost('/api/live/analyze',{moves:[...L.moves],settings:options,explain_search:explain},ctl.signal);
     if(serial!==L.serial) return;
+    if(result.trace){L.trace=result.trace;renderSearchTrace(result.trace);}
     if(result.best) $('#liveBest').textContent=result.best.san?`最佳着法：${result.best.san} · 变化：${result.best.pv.join(' ')} · ${result.best.mate!=null?'M'+result.best.mate:(result.best.cp/100).toFixed(2)+'（白方视角）'}`:'终局，无可走着法。';
     $('#liveComment').textContent=[result.comment,result.error].filter(Boolean).join('\n') || (options.stockfish?'Stockfish 分析已完成。':'暂无解说。');
     if(result.billing) { liveCny += result.billing.cost_cny; $('#totalCost').textContent=liveCny.toFixed(4)+' CNY'; }
@@ -129,6 +153,7 @@ async function resetLive() {
   try {
     L.position=await livePost('/api/live/position',{moves:[]});
     L.moves=[];L.selected=null;L.ended=null;L.time={white:minutes*60000,black:minutes*60000};L.increment=increment*1000;L.stamp=Date.now();
+    $('#liveTrace').hidden=true;L.trace=null;
     $('#liveBest').textContent='';$('#liveComment').textContent='辅助可在对局中随时开启。';
   }catch(e){toast(e.message,true);}finally{L.busy=false;paintLive();}
 }
@@ -204,6 +229,7 @@ $('#liveReset').onclick=()=>{
 };
 $('#liveFlip').onclick=()=>{L.flipped=!L.flipped;paintLive();};
 $('#liveRetry').onclick=()=>analyzeLive();
+$('#liveExplain').onclick=()=>analyzeLive(true);
 $('#liveDraw').onclick=()=>{if(L.position?.can_claim_draw){settleClock();L.ended='1/2-1/2 · 申请和棋';L.running=false;cancelLiveAnalysis();paintClock();}};
 $('#liveExport').onclick=()=>{
   if(!L.position)return;

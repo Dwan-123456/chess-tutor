@@ -102,6 +102,27 @@ class LiveTests(unittest.TestCase):
         self.assertIn('stockfish_current_position',facts)  # Caller data stays intact.
         self.assertIn('严格禁止下一步建议',system)
 
+    def test_search_explanation_routes_to_trace_worker_and_adapts_prompt(self):
+        from webapp.search_trace import Recorder, build_report
+        from test_search_trace import iteration
+        recorder=Recorder()
+        for depth in (10,11,12):
+            row=iteration(depth,(200,0,-100))
+            recorder.uci[depth]={r['rank']:r for r in row['candidates']}
+        report=build_report(chess.Board(),recorder,0.5,3)
+        future=Future();future.set_result(report)
+        job=SimpleNamespace(future=future,stop=lambda:None)
+        app.state.settings.commentator_backend='deepseek'
+        app.state.llm=SimpleNamespace(chat=AsyncMock(return_value=('首选解释',{})),aclose=AsyncMock())
+        with patch.object(app.state.engine_scheduler,'submit_explanation',return_value=job) as submit:
+            result=self.client.post('/api/live/analyze',json={'moves':[], 'explain_search':True,
+                                     'settings':{'stockfish':True,'deepseek':True}}).json()
+        submit.assert_called_once()
+        self.assertEqual(result['trace']['candidate_count'],1)
+        self.assertEqual(result['best']['san'],'e4')
+        self.assertIn('1个候选',app.state.llm.chat.call_args.args[1])
+        self.assertEqual(result['comment'],'首选解释')
+
 
 class DepthTests(unittest.IsolatedAsyncioTestCase):
     async def test_provider_payload_per_request(self):

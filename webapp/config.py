@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from dataclasses import dataclass, field
 
 
@@ -47,6 +48,9 @@ class Settings:
     factcheck_model: str = field(default_factory=lambda: _env("FACTCHECK_MODEL", "openai/gpt-oss-120b"))
 
     stockfish_path: str = field(default_factory=lambda: _env("STOCKFISH_PATH", "stockfish"))
+    trace_stockfish_path: str = field(default_factory=lambda: _env("TRACE_STOCKFISH_PATH", str(
+        Path(__file__).resolve().parent.parent / 'runtime' / 'stockfish-trace' /
+        ('stockfish-trace.exe' if os.name == 'nt' else 'stockfish-trace'))))
     engine_mode: str = "adaptive"
     engine_effort: str = "high"
     engine_time_limit_s: float = 5.0

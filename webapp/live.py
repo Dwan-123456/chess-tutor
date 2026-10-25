@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from chess_annotator import app_prompts, positional
 from .tutor_settings import TutorSettings
-from .live_prompts import build_live_prompt
+from .live_prompts import build_live_prompt, build_search_prompt
 
 router = APIRouter()
 
@@ -18,6 +18,7 @@ class PositionRequest(BaseModel):
 
 class AnalysisRequest(PositionRequest):
     settings: TutorSettings = Field(default_factory=TutorSettings)
+    explain_search: bool = False
 
 
 def replay(moves):
@@ -85,7 +86,8 @@ async def analyze(req: AnalysisRequest, request: Request):
     job = None
     try:
         if options.stockfish:
-            job = st.engine_scheduler.submit_position(board, s, threading.Event())
+            submit = st.engine_scheduler.submit_explanation if req.explain_search else st.engine_scheduler.submit_position
+            job = submit(board, s, threading.Event())
             future = asyncio.wrap_future(job.future)
             while not future.done():
                 if await request.is_disconnected():
@@ -93,15 +95,17 @@ async def analyze(req: AnalysisRequest, request: Request):
                     return output
                 await asyncio.wait({future}, timeout=0.1)
             info = await future
-            pvboard = board.copy()
-            pv = []
-            for move in info['pv']:
-                pv.append(pvboard.san(move))
-                pvboard.push(move)
-            best = info['best_move']
-            output['best'] = {'san': board.san(best) if best else None,
-                              'uci': best.uci() if best else None, 'pv': pv,
-                              'cp': info['cp'], 'mate': info['mate'], 'search': info['search']}
+            if req.explain_search:
+                output['trace'] = info
+                facts['search_evidence'] = info
+                if not info.get('candidates'):
+                    output['error'] = info.get('error', '尚无完整候选比较')
+                    return output
+                candidate = info.get('final_best') or info['candidates'][0]
+                output['best'] = {'san':candidate['san'], 'uci':candidate['uci'], 'pv':candidate['pv'],
+                                  **candidate['score_white'], 'search':{'depth':info['depth'], 'mode':'trace'}}
+            else:
+                output['best'] = best_output(board, info)
             facts['stockfish_current_position'] = output['best']
         if options.deepseek:
             if st.settings.commentator_backend != 'deepseek' or st.llm is None:
@@ -113,8 +117,11 @@ async def analyze(req: AnalysisRequest, request: Request):
                 if st.store.spent_today() >= s.daily_budget_usd:
                     output['error'] = '今日解说预算已用完。'
                     return output
-                system, user = build_live_prompt(facts, options.stockfish)
-                text, usage = await st.llm.chat(s.model, system, user, depth=options.deepseek_depth)
+                system, user = build_search_prompt(facts) if req.explain_search and options.stockfish else build_live_prompt(facts, options.stockfish)
+                token_limit = 500
+                if req.explain_search and options.stockfish:
+                    token_limit = {1:400,2:900,3:1200}[len(info['candidates'])]
+                text, usage = await st.llm.chat(s.model, system, user, max_tokens=token_limit, depth=options.deepseek_depth)
                 st.store.add_spend(s.cost(s.model, usage))
                 output.update(comment=text, generation=usage.get('generation'), billing=usage.get('billing'))
         return output
@@ -126,3 +133,14 @@ async def analyze(req: AnalysisRequest, request: Request):
     finally:
         if job is not None:
             job.stop()
+
+
+def best_output(board, info):
+    pvboard = board.copy()
+    pv = []
+    for move in info['pv']:
+        pv.append(pvboard.san(move))
+        pvboard.push(move)
+    best = info['best_move']
+    return {'san':board.san(best) if best else None, 'uci':best.uci() if best else None,
+            'pv':pv, 'cp':info['cp'], 'mate':info['mate'], 'search':info['search']}
