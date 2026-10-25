@@ -82,4 +82,7 @@ node tests/test_live_clock.cjs
 
 ## Credits and license
 
+Live commentary prompts are adapted from Apache-2.0-licensed chess-coach;
+see [prompt sources and modifications](docs/live-prompt-sources.md).
+
 Based on [shashank-v-98/chess-annotator](https://github.com/shashank-v-98/chess-annotator), retaining the original [MIT license](LICENSE). Upstream training scripts and optional student backends remain in source, but are not required for live play/DeepSeek. [Stockfish](https://github.com/official-stockfish/Stockfish) is GPL-licensed and its executable is not included in this source release.

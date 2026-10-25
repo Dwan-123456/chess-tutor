@@ -76,6 +76,11 @@ class LiveTests(unittest.TestCase):
         self.assertIn('严格禁止',args.args[1])
         facts=json.loads(args.args[2]); self.assertEqual(len(facts['moves']),3)
         self.assertIn('f3',facts['pieces']['White']); self.assertIn('insights',facts)
+        self.assertNotIn('check',facts)
+        self.assertNotIn('result',facts)
+        self.assertEqual(facts['fen_before'], replay(moves[:-1])[0].fen())
+        self.assertEqual(facts['last_move_effects']['newly_controlled_center_squares'],['d4','e5'])
+        self.assertTrue(facts['last_move_effects']['develops_minor_piece_from_back_rank'])
         self.assertNotIn('stockfish_current_position',facts)
         self.assertEqual(args.kwargs['depth'],'high')
         future=Future();future.set_result({'best_move':chess.Move.from_uci('b8c6'),'pv':[chess.Move.from_uci('b8c6')],'cp':15,'mate':None,'search':{}})
@@ -84,6 +89,18 @@ class LiveTests(unittest.TestCase):
             result=self.client.post('/api/live/analyze',json={'moves':moves,'settings':{'stockfish':True,'deepseek':True,'deepseek_depth':'max'}}).json()
         self.assertEqual(result['best']['san'],'Nc6')
         self.assertEqual(json.loads(app.state.llm.chat.call_args.args[2])['stockfish_current_position']['san'],'Nc6')
+
+    def test_prompt_preserves_real_endings_without_leaking_engine_advice(self):
+        from webapp.live_prompts import build_live_prompt
+        facts={'check':True,'result':'0-1','last_move':'Qh4#',
+               'stockfish_current_position':{'san':'Nc6'}}
+        system,user=build_live_prompt(facts,False)
+        context=json.loads(user)
+        self.assertTrue(context['check'])
+        self.assertEqual(context['result'],'0-1')
+        self.assertNotIn('stockfish_current_position',context)
+        self.assertIn('stockfish_current_position',facts)  # Caller data stays intact.
+        self.assertIn('严格禁止下一步建议',system)
 
 
 class DepthTests(unittest.IsolatedAsyncioTestCase):
